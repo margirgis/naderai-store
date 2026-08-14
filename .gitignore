@@ -42,4 +42,7 @@ history/*.json
 .env.*
 !.env.example
 .vite
+<<<<<<< HEAD
 historical_context.txt
+=======
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)

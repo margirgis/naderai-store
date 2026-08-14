@@ -3,6 +3,11 @@ package com.naderai.smsreader
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+<<<<<<< HEAD
+=======
+import android.os.Build
+import android.provider.Settings
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
 import android.provider.Telephony
 import android.util.Log
 
@@ -15,7 +20,11 @@ class SmsReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
         val webhookUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null) ?: return
         val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
+<<<<<<< HEAD
         val deviceId = HeartbeatManager.getDeviceId(context)
+=======
+        val deviceId = getDeviceId(context)
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
 
         for (sms in messages) {
             val body = sms.messageBody ?: continue
@@ -122,5 +131,19 @@ class SmsReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "SmsReceiver"
+<<<<<<< HEAD
+=======
+
+        fun getDeviceId(context: Context): String {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            var id = prefs.getString(HeartbeatManager.KEY_DEVICE_ID, null)
+            if (id.isNullOrEmpty()) {
+                id = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                    ?: (System.currentTimeMillis().toString())
+                prefs.edit().putString(HeartbeatManager.KEY_DEVICE_ID, id).apply()
+            }
+            return id
+        }
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
     }
 }

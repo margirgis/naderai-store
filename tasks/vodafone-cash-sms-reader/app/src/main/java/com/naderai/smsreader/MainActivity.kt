@@ -2,6 +2,10 @@ package com.naderai.smsreader
 
 import android.Manifest
 import android.content.pm.PackageManager
+<<<<<<< HEAD
+=======
+import android.graphics.drawable.Drawable
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -77,6 +81,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+<<<<<<< HEAD
         // Normalize URL
         val normalizedUrl = webhookUrl
             .replace(" ", "")
@@ -94,6 +99,10 @@ class MainActivity : AppCompatActivity() {
 
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
             putString(KEY_WEBHOOK_URL, normalizedUrl)
+=======
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
+            putString(KEY_WEBHOOK_URL, webhookUrl)
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
             putString(KEY_SECRET, secret)
             apply()
         }
@@ -127,6 +136,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun sendTestWebhook() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+<<<<<<< HEAD
         val webhookUrl = prefs.getString(KEY_WEBHOOK_URL, null)?.trim()
         val secret = prefs.getString(KEY_SECRET, null)?.trim()
 
@@ -142,10 +152,20 @@ class MainActivity : AppCompatActivity() {
             "device_model" to (Build.MODEL ?: "Unknown"),
             "device_name" to (Build.DEVICE ?: "Unknown"),
             "app_version" to "1.0.1"
+=======
+        val webhookUrl = prefs.getString(KEY_WEBHOOK_URL, null) ?: return
+        val secret = prefs.getString(KEY_SECRET, null) ?: return
+
+        val testBody = mapOf(
+            "sender_phone" to "01012345678",
+            "message" to "لقد استلمت مبلغ 300.00 جنيه من رقم 01012345678",
+            "received_at" to System.currentTimeMillis().toString()
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
         )
 
         WebhookSender.send(webhookUrl, secret, testBody) { success, message ->
             runOnUiThread {
+<<<<<<< HEAD
                 if (success) {
                     updateStatus(true, "متصل")
                     Toast.makeText(this, "تم بنجاح: الاتصال بالسيرفر شغال", Toast.LENGTH_LONG).show()
@@ -153,6 +173,9 @@ class MainActivity : AppCompatActivity() {
                     updateStatus(false, "غير متصل: $message")
                     Toast.makeText(this, "فشل: $message", Toast.LENGTH_LONG).show()
                 }
+=======
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+>>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
             }
         }
     }
