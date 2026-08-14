@@ -2,6 +2,7 @@ package com.naderai.smsreader
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -13,6 +14,7 @@ import com.naderai.smsreader.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private var heartbeatManager: HeartbeatManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +26,17 @@ class MainActivity : AppCompatActivity() {
 
         loadConfig()
         requestSmsPermission()
+        updateStatus(false, "في انتظار الحفظ...")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startHeartbeat()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        heartbeatManager?.stop()
     }
 
     private fun requestSmsPermission() {
@@ -71,12 +84,31 @@ class MainActivity : AppCompatActivity() {
             apply()
         }
         Toast.makeText(this, "تم حفظ الإعدادات", Toast.LENGTH_SHORT).show()
+        startHeartbeat()
     }
 
     private fun loadConfig() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         binding.webhookUrlInput.setText(prefs.getString(KEY_WEBHOOK_URL, "https://ccimllgqdxuvymdeikmn.supabase.co/functions/v1/wallet-auto-confirm"))
         binding.secretInput.setText(prefs.getString(KEY_SECRET, ""))
+    }
+
+    private fun startHeartbeat() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val webhookUrl = prefs.getString(KEY_WEBHOOK_URL, null) ?: return
+        val secret = prefs.getString(KEY_SECRET, null) ?: return
+
+        heartbeatManager?.stop()
+        heartbeatManager = HeartbeatManager(this, webhookUrl, secret) { connected, message ->
+            runOnUiThread { updateStatus(connected, message) }
+        }
+        heartbeatManager?.start()
+    }
+
+    private fun updateStatus(connected: Boolean, message: String) {
+        binding.statusText.text = message
+        val drawable = if (connected) R.drawable.status_online else R.drawable.status_offline
+        binding.statusDot.setBackgroundResource(drawable)
     }
 
     private fun sendTestWebhook() {
@@ -86,7 +118,7 @@ class MainActivity : AppCompatActivity() {
 
         val testBody = mapOf(
             "sender_phone" to "01012345678",
-            "message" to "\u0644قد استلمت مبلغ 300.00 جنيه من رقم 01012345678",
+            "message" to "لقد استلمت مبلغ 300.00 جنيه من رقم 01012345678",
             "received_at" to System.currentTimeMillis().toString()
         )
 

@@ -13,6 +13,7 @@ import {
   Settings,
   Banknote,
   Github,
+  Smartphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'طلبات الشحن', path: '/admin/topup-requests', icon: Banknote },
   { label: 'الخدمات', path: '/admin/services', icon: Settings },
   { label: 'GitHub', path: '/admin/github', icon: Github },
+  { label: 'أجهزة SMS', path: '/admin/sms-devices', icon: Smartphone },
 ];
 
 function NavContent({ onClose }: { onClose?: () => void }) {

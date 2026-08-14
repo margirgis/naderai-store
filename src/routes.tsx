@@ -20,6 +20,7 @@ import AdminWalletPage from './pages/admin/AdminWalletPage';
 import AdminTopupRequestsPage from './pages/admin/AdminTopupRequestsPage';
 import AdminServicesPage from './pages/admin/AdminServicesPage';
 import AdminGithubPage from './pages/admin/AdminGithubPage';
+import AdminSmsDevicesPage from './pages/admin/AdminSmsDevicesPage';
 import type { ReactNode } from 'react';
 
 export interface RouteConfig {
@@ -46,6 +47,7 @@ export const routes: RouteConfig[] = [
   { name: 'Admin Topup Requests', path: '/admin/topup-requests', element: <AdminTopupRequestsPage />, access: 'admin' },
   { name: 'Admin Services',   path: '/admin/services',  element: <AdminServicesPage />,    access: 'admin' },
   { name: 'GitHub',           path: '/admin/github',    element: <AdminGithubPage />,      access: 'admin' },
+  { name: 'SMS Devices',      path: '/admin/sms-devices', element: <AdminSmsDevicesPage />, access: 'admin' },
 
   // ─── Customer Store ────────────────────────────────────────
   { name: 'Store Dashboard',  path: '/store',                   element: <CustomerDashboardPage />, access: 'customer' },

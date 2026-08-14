@@ -8,6 +8,7 @@ interface SmsPayload {
   transaction_id?: string;
   message?: string;
   received_at?: string;
+  device_id?: string;
 }
 
 function normalizeEgyptianPhone(raw: string): string | null {
@@ -68,6 +69,19 @@ function extractSenderName(text: string): string | null {
   return null;
 }
 
+interface HeartbeatPayload {
+  action: 'heartbeat';
+  device_id: string;
+  device_model?: string;
+  device_name?: string;
+  app_version?: string;
+  [key: string]: unknown;
+}
+
+function isHeartbeat(payload: Record<string, unknown>): payload is HeartbeatPayload {
+  return payload.action === 'heartbeat' && typeof payload.device_id === 'string';
+}
+
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -78,17 +92,38 @@ Deno.serve(async (req: Request) => {
   const secret = rawSecret?.replace(/^Bearer\s+/i, '') ?? '';
   if (!expected || secret !== expected) return errorResponse('Invalid secret', 401);
 
-  let payload: SmsPayload;
+  const db = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { auth: { persistSession: false } },
+  );
+
+  let payload: Record<string, unknown>;
   try {
     payload = await req.json();
   } catch {
     return errorResponse('Invalid JSON', 400);
   }
 
-  const message = (payload.message ?? '').trim();
+  // Heartbeat from Android device
+  if (isHeartbeat(payload)) {
+    await db.from('sms_device_status').upsert({
+      device_id: payload.device_id,
+      device_model: payload.device_model ?? null,
+      device_name: payload.device_name ?? null,
+      app_version: payload.app_version ?? null,
+      last_heartbeat_at: new Date().toISOString(),
+      status: 'online',
+      is_active: true,
+    }, { onConflict: 'device_id' });
+    return jsonResponse({ ok: true, action: 'heartbeat', status: 'online' });
+  }
+
+  const smsPayload = payload as SmsPayload;
+  const message = (smsPayload.message ?? '').trim();
 
   // Normalize phone
-  let senderPhone = normalizeEgyptianPhone(payload.sender_phone ?? '');
+  let senderPhone = normalizeEgyptianPhone(smsPayload.sender_phone ?? '');
   if (!senderPhone && message) {
     const m = message.match(/(?:\+?20)?\s*0?1\d{9}/);
     if (m) senderPhone = normalizeEgyptianPhone(m[0]);
@@ -96,25 +131,27 @@ Deno.serve(async (req: Request) => {
 
   // Parse amount (support both numeric and string from Android)
   let amount: number | null = null;
-  if (payload.amount) {
-    const raw = typeof payload.amount === 'number' ? payload.amount : parseFloat(String(payload.amount));
+  if (smsPayload.amount) {
+    const raw = typeof smsPayload.amount === 'number' ? smsPayload.amount : parseFloat(String(smsPayload.amount));
     if (!isNaN(raw) && raw > 0) amount = raw;
   }
   if (!amount && message) amount = extractAmount(message);
 
   // Extract optional fields
-  const senderName = payload.sender_name?.trim() || (message ? extractSenderName(message) : null);
-  const transactionId = payload.transaction_id?.trim() || (message ? extractTransactionId(message) : null);
+  const senderName = smsPayload.sender_name?.trim() || (message ? extractSenderName(message) : null);
+  const transactionId = smsPayload.transaction_id?.trim() || (message ? extractTransactionId(message) : null);
 
   if (!senderPhone || !amount) {
     return jsonResponse({ ok: false, reason: 'Could not parse sender_phone or amount', sender_phone: senderPhone, amount });
   }
 
-  const db = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    { auth: { persistSession: false } },
-  );
+  // Update last webhook timestamp for any known device (best effort)
+  if (smsPayload.device_id) {
+    await db.from('sms_device_status').upsert({
+      device_id: smsPayload.device_id,
+      last_webhook_at: new Date().toISOString(),
+    }, { onConflict: 'device_id' });
+  }
 
   const { data, error } = await db.rpc('auto_confirm_wallet_topup', {
     p_sender_phone: senderPhone,
