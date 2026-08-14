@@ -9,8 +9,18 @@ Sentry.init({
   environment: import.meta.env.MODE,
 });
 
+const ErrorFallback = () => (
+  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a', color:'#f8fafc', fontFamily:'sans-serif', gap:'16px' }}>
+    <h2 style={{ fontSize:'1.5rem' }}>حدث خطأ غير متوقع</h2>
+    <p style={{ color:'#94a3b8' }}>يرجى تحديث الصفحة</p>
+    <button onClick={() => window.location.reload()} style={{ padding:'10px 24px', background:'#7c3aed', color:'#fff', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'1rem' }}>
+      تحديث الصفحة
+    </button>
+  </div>
+);
+
 createRoot(document.getElementById("root")!).render(
-  <Sentry.ErrorBoundary fallback={<p>应用发生错误，请刷新页面重试</p>}>
+  <Sentry.ErrorBoundary fallback={<ErrorFallback />}>
     <AppWrapper>
       <App />
     </AppWrapper>
