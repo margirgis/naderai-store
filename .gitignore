@@ -31,6 +31,14 @@ package.json.[0-9]*
 history/*.json
 .vite_cache
 /.skills
-/tasks
+# Exclude task outputs but keep Android project source
+/tasks/*.sql
+/tasks/*.txt
+/tasks/*/
+!/tasks/vodafone-cash-sms-reader/
 .native-wind-cache
+# Secrets
+.env
+.env.*
+!.env.example
 .vite
