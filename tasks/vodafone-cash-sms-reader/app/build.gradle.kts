@@ -11,13 +11,8 @@ android {
         applicationId = "com.naderai.smsreader"
         minSdk = 24
         targetSdk = 34
-<<<<<<< HEAD
-        versionCode = 2
-        versionName = "1.0.1"
-=======
-        versionCode = 1
-        versionName = "1.0"
->>>>>>> e74a468 (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
+        versionCode = 3
+        versionName = "1.0.2"
     }
 
     buildTypes {
