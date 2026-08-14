@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import IntersectObserver from '@/components/common/IntersectObserver';
 import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { routes } from './routes';
 import { useAuth } from '@/contexts/AuthContext';
@@ -64,11 +65,13 @@ function AppRoutes() {
 const App: React.FC = () => {
   return (
     <Router>
-      <AuthProvider>
-        <IntersectObserver />
-        <AppRoutes />
-        <Toaster richColors position="top-right" />
-      </AuthProvider>
+      <TooltipProvider>
+        <AuthProvider>
+          <IntersectObserver />
+          <AppRoutes />
+          <Toaster richColors position="top-right" />
+        </AuthProvider>
+      </TooltipProvider>
     </Router>
   );
 };

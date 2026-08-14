@@ -1,5 +1,4 @@
 import { HelmetProvider, Helmet } from "react-helmet-async";
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 const PageMeta = ({
   title,
@@ -16,9 +15,7 @@ const PageMeta = ({
 
 export const AppWrapper = ({ children }: { children: React.ReactNode }) => (
   <HelmetProvider>
-    <TooltipProvider>
-      {children}
-    </TooltipProvider>
+    {children}
   </HelmetProvider>
 );
 
