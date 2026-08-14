@@ -3,8 +3,6 @@ package com.naderai.smsreader
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.provider.Settings
 import android.provider.Telephony
 import android.util.Log
 
@@ -17,7 +15,7 @@ class SmsReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
         val webhookUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null) ?: return
         val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
-        val deviceId = getDeviceId(context)
+        val deviceId = HeartbeatManager.getDeviceId(context)
 
         for (sms in messages) {
             val body = sms.messageBody ?: continue
@@ -124,16 +122,5 @@ class SmsReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "SmsReceiver"
-
-        fun getDeviceId(context: Context): String {
-            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-            var id = prefs.getString(HeartbeatManager.KEY_DEVICE_ID, null)
-            if (id.isNullOrEmpty()) {
-                id = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-                    ?: (System.currentTimeMillis().toString())
-                prefs.edit().putString(HeartbeatManager.KEY_DEVICE_ID, id).apply()
-            }
-            return id
-        }
     }
 }

@@ -2,7 +2,6 @@ package com.naderai.smsreader
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -78,8 +77,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Normalize URL
+        val normalizedUrl = webhookUrl
+            .replace(" ", "")
+            .replace("\n", "")
+            .replace("\r", "")
+
+        if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+            Toast.makeText(this, "رابط الـ webhook يجب أن يبدأ بـ http:// أو https://", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Update input fields after normalization
+        binding.webhookUrlInput.setText(normalizedUrl)
+        binding.secretInput.setText(secret)
+
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
-            putString(KEY_WEBHOOK_URL, webhookUrl)
+            putString(KEY_WEBHOOK_URL, normalizedUrl)
             putString(KEY_SECRET, secret)
             apply()
         }
@@ -113,18 +127,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun sendTestWebhook() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val webhookUrl = prefs.getString(KEY_WEBHOOK_URL, null) ?: return
-        val secret = prefs.getString(KEY_SECRET, null) ?: return
+        val webhookUrl = prefs.getString(KEY_WEBHOOK_URL, null)?.trim()
+        val secret = prefs.getString(KEY_SECRET, null)?.trim()
 
+        if (webhookUrl.isNullOrEmpty() || secret.isNullOrEmpty()) {
+            Toast.makeText(this, "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        updateStatus(false, "جاري الاختبار...")
         val testBody = mapOf(
-            "sender_phone" to "01012345678",
-            "message" to "لقد استلمت مبلغ 300.00 جنيه من رقم 01012345678",
-            "received_at" to System.currentTimeMillis().toString()
+            "action" to "heartbeat",
+            "device_id" to (HeartbeatManager.getDeviceId(this)),
+            "device_model" to (Build.MODEL ?: "Unknown"),
+            "device_name" to (Build.DEVICE ?: "Unknown"),
+            "app_version" to "1.0.1"
         )
 
         WebhookSender.send(webhookUrl, secret, testBody) { success, message ->
             runOnUiThread {
-                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                if (success) {
+                    updateStatus(true, "متصل")
+                    Toast.makeText(this, "تم بنجاح: الاتصال بالسيرفر شغال", Toast.LENGTH_LONG).show()
+                } else {
+                    updateStatus(false, "غير متصل: $message")
+                    Toast.makeText(this, "فشل: $message", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

@@ -42,3 +42,4 @@ history/*.json
 .env.*
 !.env.example
 .vite
+historical_context.txt

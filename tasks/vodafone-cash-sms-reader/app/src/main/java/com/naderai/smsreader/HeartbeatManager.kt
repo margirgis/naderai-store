@@ -14,7 +14,14 @@ class HeartbeatManager(
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val deviceId: String
-        get() {
+        get() = Companion.getDeviceId(context)
+
+    companion object {
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        const val PREFS_NAME = "naderai_sms_reader"
+        const val KEY_DEVICE_ID = "device_id"
+
+        fun getDeviceId(context: Context): String {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             var id = prefs.getString(KEY_DEVICE_ID, null)
             if (id.isNullOrEmpty()) {
@@ -24,6 +31,7 @@ class HeartbeatManager(
             }
             return id
         }
+    }
 
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
@@ -47,17 +55,11 @@ class HeartbeatManager(
             "device_id" to deviceId,
             "device_model" to (Build.MODEL ?: "Unknown"),
             "device_name" to (Build.DEVICE ?: "Unknown"),
-            "app_version" to "1.0.0"
+            "app_version" to "1.0.1"
         )
 
         WebhookSender.send(webhookUrl, secret, payload) { success, message ->
             onStatusChange(success, if (success) "متصل" else "غير متصل: $message")
         }
-    }
-
-    companion object {
-        private const val HEARTBEAT_INTERVAL_MS = 30_000L
-        const val PREFS_NAME = "naderai_sms_reader"
-        const val KEY_DEVICE_ID = "device_id"
     }
 }
