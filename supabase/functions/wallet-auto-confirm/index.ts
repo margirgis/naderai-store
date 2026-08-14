@@ -54,9 +54,9 @@ function extractTransactionId(text: string): string | null {
 
 function extractSenderName(text: string): string | null {
   const patterns = [
-    /من\s+([\u0600-\u06FF ]{2,30})\s+مبلغ/,
+    /\u0628\u0625\u0633\u0645\s+([A-Za-z][A-Za-z0-9 ]{1,30})\s*\u0639\u0644\u0649/,
+    /\u0628\u0627\u0633\u0645\s+([\u0600-\u06FF ]{2,30})\s+/,
     /from\s+([A-Za-z][A-Za-z ]{1,30})\s+on/i,
-    /من\s+([\u0600-\u06FFa-zA-Z][\u0600-\u06FFa-zA-Z0-9 ]{1,30})\s/,
   ];
   for (const re of patterns) {
     const m = text.match(re);
@@ -73,8 +73,9 @@ Deno.serve(async (req: Request) => {
   if (cors) return cors;
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
 
-  const secret = req.headers.get('X-SMS-Webhook-Secret');
+  const rawSecret = req.headers.get('X-SMS-Webhook-Secret') ?? req.headers.get('Authorization');
   const expected = Deno.env.get('SMS_WEBHOOK_SECRET');
+  const secret = rawSecret?.replace(/^Bearer\s+/i, '') ?? '';
   if (!expected || secret !== expected) return errorResponse('Invalid secret', 401);
 
   let payload: SmsPayload;
@@ -124,83 +125,6 @@ Deno.serve(async (req: Request) => {
   });
 
   if (error) return errorResponse(error.message, 500);
-
-  return jsonResponse(data);
-});
-
-interface SmsPayload {
-  sender_phone?: string;
-  amount?: number;
-  message?: string;
-  received_at?: string;
-}
-
-function normalizeEgyptianPhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length === 10 && digits.startsWith('1')) return digits;
-  if (digits.length === 11 && digits.startsWith('01')) return digits.slice(1);
-  if (digits.length === 12 && digits.startsWith('20') && digits[2] === '1') return digits.slice(2);
-  if (digits.length === 13 && digits.startsWith('20') && digits[3] === '1') return digits.slice(3);
-  return null;
-}
-
-function extractAmount(text: string): number | null {
-  const re = /([\d,]+\.?\d{0,2})/;
-  const m = text.match(re);
-  if (m) {
-    const n = parseFloat(m[1].replace(/,/g, ''));
-    if (!isNaN(n) && n > 0) return n;
-  }
-  return null;
-}
-
-Deno.serve(async (req: Request) => {
-  const cors = handleCors(req);
-  if (cors) return cors;
-  if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
-
-  const secret = req.headers.get('X-SMS-Webhook-Secret');
-  const expected = Deno.env.get('SMS_WEBHOOK_SECRET');
-  if (!expected || secret !== expected) return errorResponse('Invalid secret', 401);
-
-  let payload: SmsPayload;
-  try {
-    payload = await req.json();
-  } catch {
-    return errorResponse('Invalid JSON', 400);
-  }
-
-  const message = (payload.message ?? '').trim();
-  let senderPhone = normalizeEgyptianPhone(payload.sender_phone ?? '');
-  let amount = payload.amount;
-
-  if (!senderPhone && message) {
-    const m = message.match(/(?:\+?20)?\s*0?1\d{9}/);
-    if (m) senderPhone = normalizeEgyptianPhone(m[0]);
-  }
-
-  if (!amount && message) {
-    amount = extractAmount(message);
-  }
-
-  if (!senderPhone || !amount) {
-    return jsonResponse({ ok: false, reason: 'Could not parse sender_phone or amount', sender_phone: senderPhone, amount });
-  }
-
-  const db = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    { auth: { persistSession: false } },
-  );
-
-  const { data, error } = await db.rpc('auto_confirm_wallet_topup', {
-    p_sender_phone: senderPhone,
-    p_amount: amount,
-  });
-
-  if (error) {
-    return errorResponse(error.message, 500);
-  }
 
   return jsonResponse(data);
 });
