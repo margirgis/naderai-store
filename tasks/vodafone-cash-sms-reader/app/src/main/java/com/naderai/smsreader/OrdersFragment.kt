@@ -11,9 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 class OrdersFragment : Fragment() {
 
@@ -50,41 +47,34 @@ class OrdersFragment : Fragment() {
                 val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
                 if (webhookUrl.isNotEmpty() && order.taskId != null) {
                     android.widget.Toast.makeText(requireContext(), "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        try {
-                            val body = org.json.JSONObject().apply {
-                                put("action", "task_result")
-                                put("task_id", order.taskId)
-                                put("request_id", order.requestId)
-                                put("result", "manual_confirmed")
-                                put("manual_confirm", true)
-                                put("confirmed_by", "device_admin")
-                            }
-                            val client = okhttp3.OkHttpClient.Builder()
-                                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                                .build()
-                            val mediaType = "application/json".toMediaType()
-                            val req = okhttp3.Request.Builder()
-                                .url(webhookUrl)
-                                .addHeader("x-device-secret", secret)
-                                .post(body.toString().toRequestBody(mediaType))
-                                .build()
-                            val resp = client.newCall(req).execute()
-                            val success = resp.isSuccessful
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                if (success) {
-                                    AppState.updateOrderStatus(order.requestId, OrderStatus.CONFIRMED)
-                                    android.widget.Toast.makeText(requireContext(), "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    android.widget.Toast.makeText(requireContext(), "فشل التأكيد: ${resp.code}", android.widget.Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        } catch (e: Exception) {
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                android.widget.Toast.makeText(requireContext(), "خطأ: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                    val body = mapOf(
+                        "action" to "task_result",
+                        "device_id" to HeartbeatManager.getDeviceId(requireContext()),
+                        "task_id" to order.taskId,
+                        "request_id" to order.requestId,
+                        "status" to "success",
+                        "result_data" to mapOf(
+                            "manual_confirm" to true,
+                            "confirmed_by" to "device_admin",
+                            "amount" to order.expectedAmount,
+                            "sender_phone" to order.customerPhone,
+                            "transaction_id" to "manual-${System.currentTimeMillis()}",
+                            "sms_body" to "تم تأكيد الطلب يدوياً من الجهاز"
+                        ),
+                        "failure_reason" to null
+                    )
+                    WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, message, _ ->
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                            if (success) {
+                                AppState.updateOrderStatus(order.requestId, OrderStatus.CONFIRMED)
+                                android.widget.Toast.makeText(requireContext(), "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                android.widget.Toast.makeText(requireContext(), "فشل التأكيد: $message", android.widget.Toast.LENGTH_LONG).show()
                             }
                         }
                     }
+                } else {
+                    android.widget.Toast.makeText(requireContext(), "task_id غير متوفر — اضغط إعادة الفحص أولاً", android.widget.Toast.LENGTH_SHORT).show()
                 }
             },
             onRescan = { order ->

@@ -161,7 +161,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
 
   const rawSecret = req.headers.get('X-SMS-Webhook-Secret') ?? req.headers.get('Authorization');
-  const expected = Deno.env.get('SMS_WEBHOOK_SECRET');
+  const expected = Deno.env.get('SMS_WEBHOOK_SECRET') ?? Deno.env.get('WEBHOOK_SECRET');
   const secret = rawSecret?.replace(/^Bearer\s+/i, '') ?? '';
   if (!expected || secret !== expected) return errorResponse('Invalid secret', 401);
 

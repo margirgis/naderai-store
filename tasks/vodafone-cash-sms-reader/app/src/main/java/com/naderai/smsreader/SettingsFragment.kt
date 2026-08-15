@@ -33,11 +33,10 @@ class SettingsFragment : Fragment() {
 
     private fun loadConfig() {
         val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0)
-        // المستخدم يدخل رابط Supabase الاساسي فقط — نبني الرابط الكامل لـ Edge Function تلقائياً
+        // المستخدم يدخل رابط Supabase الاساسي + Webhook Secret (مش Anon Key)
         binding.webhookUrlInput.setText(prefs.getString(MainActivity.KEY_WEBHOOK_URL,
             "https://ccimllgqdxuvymdeikmn.supabase.co"))
-        binding.secretInput.setText(prefs.getString(MainActivity.KEY_SECRET,
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjaW1sbGdxZHh1dnltZGVpa21uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2ODk3OTQsImV4cCI6MjEwMjI2NTc5NH0.intP2QkhXHswRigBpCYb127yNk3VAfj68rpS_Ujvies"))
+        binding.secretInput.setText(prefs.getString(MainActivity.KEY_SECRET, "") ?: "")
     }
 
     private fun showDeviceStatus() {
@@ -76,7 +75,7 @@ class SettingsFragment : Fragment() {
         val rawUrl = binding.webhookUrlInput.text.toString().trim()
         val secret = binding.secretInput.text.toString().trim()
         if (rawUrl.isEmpty() || secret.isEmpty()) {
-            Toast.makeText(requireContext(), "رابط Supabase و Anon Key مطلوبان", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "رابط Supabase و Webhook Secret مطلوبان", Toast.LENGTH_SHORT).show()
             return
         }
         val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
@@ -84,8 +83,8 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "رابط Supabase غير صالح — يجب أن يبدأ بـ https://", Toast.LENGTH_SHORT).show()
             return
         }
-        if (!secret.startsWith("eyJ") || secret.length < 200) {
-            Toast.makeText(requireContext(), "Anon Key غير صالح — تأكد من نسخه بالكامل (يبدأ بـ eyJ)", Toast.LENGTH_LONG).show()
+        if (secret.length < 8) {
+            Toast.makeText(requireContext(), "Webhook Secret ضعيف — تأكد من نسخ السر الكامل", Toast.LENGTH_LONG).show()
             return
         }
         requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0).edit()
@@ -106,8 +105,8 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
             return
         }
-        if (secret.isNullOrEmpty() || !secret.startsWith("eyJ") || secret.length < 200) {
-            Toast.makeText(requireContext(), "Anon Key غير صالح — تأكد من نسخه بالكامل", Toast.LENGTH_LONG).show()
+        if (secret.length < 8) {
+            Toast.makeText(requireContext(), "Webhook Secret غير صالح — تأكد من نسخه بالكامل", Toast.LENGTH_LONG).show()
             return
         }
         binding.registerButton.isEnabled = false
@@ -140,8 +139,8 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
             return
         }
-        if (secret.isNullOrEmpty() || !secret.startsWith("eyJ") || secret.length < 200) {
-            Toast.makeText(requireContext(), "Anon Key غير صالح — تأكد من نسخه بالكامل", Toast.LENGTH_LONG).show()
+        if (secret.length < 8) {
+            Toast.makeText(requireContext(), "Webhook Secret غير صالح — تأكد من نسخه بالكامل", Toast.LENGTH_LONG).show()
             return
         }
         binding.testConnectionButton.isEnabled = false
@@ -167,7 +166,7 @@ class SettingsFragment : Fragment() {
                     AppState.lastError.postValue(null)
                 } else {
                     val errorMessage = when {
-                        msg.contains("401") -> "❌ فشل: 401 — Anon Key غير صحيح. تأكد من النسخ الكامل."
+                        msg.contains("401") -> "❌ فشل: 401 — Webhook Secret غير صحيح. تأكد إن السر نفسه في Supabase Secrets."
                         msg.contains("404") -> "❌ فشل: 404 — رابط Supabase غير صحيح"
                         msg.contains("timeout", true) -> "❌ فشل: انتهت مهلة الاتصال — تأكد من الإنترنت"
                         else -> "❌ فشل: $msg"
