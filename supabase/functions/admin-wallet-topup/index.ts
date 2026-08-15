@@ -1,6 +1,7 @@
 /**
- * admin-wallet-topup — Admin manually credits or debits a customer's wallet
+ * admin-wallet-topup — يُعدِّل رصيد العميل بشكل آمن عبر admin_adjust_wallet RPC
  * POST { customer_id, type: 'credit'|'debit', amount, reason }
+ * يُسجّل balance_before + balance_after + admin_audit_log تلقائياً من RPC
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { handleCors, jsonResponse, errorResponse } from '../_shared/cors.ts';
@@ -39,57 +40,49 @@ Deno.serve(async (req: Request) => {
     { auth: { persistSession: false } }
   );
 
-  const { data: profile, error: profileErr } = await db
-    .from('profiles')
-    .select('wallet_balance')
-    .eq('id', customer_id)
-    .maybeSingle();
-
-  if (profileErr || !profile) return errorResponse('العميل غير موجود', 404);
-
-  const currentBalance: number = profile.wallet_balance ?? 0;
-  let newBalance: number;
-
-  if (type === 'credit') {
-    newBalance = currentBalance + amount;
-  } else {
-    if (currentBalance < amount) return errorResponse('رصيد العميل غير كافٍ للخصم', 400);
-    newBalance = currentBalance - amount;
-  }
-
-  const { error: updateErr } = await db
-    .from('profiles')
-    .update({ wallet_balance: newBalance })
-    .eq('id', customer_id);
-
-  if (updateErr) return errorResponse('فشل تحديث الرصيد', 500);
-
-  await db.from('wallet_transactions').insert({
-    customer_id,
-    type,
-    amount,
-    balance_after: newBalance,
-    reason,
-    created_by: adminId,
-    reference: `ADMIN-${Date.now()}`,
+  // استخدام RPC الآمن الذي يُسجّل balance_before + audit_log تلقائياً
+  const { data, error } = await db.rpc('admin_adjust_wallet', {
+    p_admin_id: adminId,
+    p_customer_id: customer_id,
+    p_type: type,
+    p_amount: amount,
+    p_reason: reason,
+    p_reference: `ADMIN-${Date.now()}`,
   });
 
-  // Notify customer about wallet change
+  if (error) return errorResponse(error.message, 500);
+  if (!data?.ok) {
+    const reason_map: Record<string, string> = {
+      unauthorized: 'غير مصرح لك بهذه العملية',
+      customer_not_found: 'العميل غير موجود',
+      insufficient_balance: 'رصيد العميل غير كافٍ للخصم',
+      amount_must_be_positive: 'المبلغ يجب أن يكون أكبر من صفر',
+      invalid_type: 'نوع العملية غير صحيح',
+    };
+    return errorResponse(reason_map[data?.reason] ?? data?.reason ?? 'فشلت العملية', 400);
+  }
+
+  // إشعار العميل
   if (type === 'credit') {
     await db.from('notifications').insert({
       user_id: customer_id,
       type: 'wallet_topup',
       title: 'تم شحن رصيدك ✅',
-      body: `تمت إضافة ${amount} Credit إلى محفظتك. رصيدك الآن: ${newBalance} Credit.`,
+      body: `تمت إضافة ${amount} Credit إلى محفظتك. رصيدك الآن: ${data.balance_after} Credit.`,
     });
-  } else if (type === 'debit') {
+  } else {
     await db.from('notifications').insert({
       user_id: customer_id,
       type: 'wallet_debit',
       title: 'تم خصم من رصيدك ⚠️',
-      body: `تم خصم ${amount} Credit من محفظتك. رصيدك الآن: ${newBalance} Credit.`,
+      body: `تم خصم ${amount} Credit من محفظتك. رصيدك الآن: ${data.balance_after} Credit.`,
     });
   }
 
-  return jsonResponse({ success: true, new_balance: newBalance });
+  return jsonResponse({
+    success: true,
+    new_balance: data.balance_after,
+    balance_before: data.balance_before,
+    balance_after: data.balance_after,
+  });
 });

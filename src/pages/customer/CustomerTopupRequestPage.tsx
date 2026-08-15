@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Wallet, Loader2, MessageCircle, Clock, CheckCircle2, XCircle,
   AlertCircle, ArrowLeft, Copy, Check, Phone, Zap, PackageOpen, Star, Tag,
+  ScanLine, AlertTriangle, ShieldAlert, Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,13 +32,22 @@ interface CreditPackage {
   badge_text: string | null;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'قيد المراجعة',
-  approved: 'تمت الموافقة',
-  rejected: 'مرفوض',
+// خريطة شاملة لحالات الطلب — تشمل scan_status أيضاً
+const STATUS_CONFIG: Record<string, {
+  label: string;
+  icon: React.ElementType;
+  colorClass: string;
+}> = {
+  pending:         { label: 'قيد المراجعة',       icon: Clock,         colorClass: 'bg-amber-500/10 text-amber-500' },
+  scanning:        { label: 'جاري الفحص',          icon: ScanLine,      colorClass: 'bg-blue-500/10 text-blue-500' },
+  rescanning:      { label: 'إعادة الفحص',         icon: ScanLine,      colorClass: 'bg-blue-400/10 text-blue-400' },
+  approved:        { label: 'تمت الموافقة ✓',      icon: CheckCircle2,  colorClass: 'bg-green-500/10 text-green-500' },
+  rejected:        { label: 'مرفوض',               icon: XCircle,       colorClass: 'bg-destructive/10 text-destructive' },
+  not_found:       { label: 'لم يتم العثور',       icon: Search,        colorClass: 'bg-muted/40 text-muted-foreground' },
+  amount_mismatch: { label: 'مبلغ غير مطابق',      icon: AlertTriangle, colorClass: 'bg-orange-500/10 text-orange-500' },
+  failed:          { label: 'فشل الفحص',           icon: XCircle,       colorClass: 'bg-destructive/10 text-destructive' },
+  duplicate:       { label: 'عملية مكررة',         icon: ShieldAlert,   colorClass: 'bg-purple-500/10 text-purple-500' },
 };
-
-const STATUS_ICONS = { pending: Clock, approved: CheckCircle2, rejected: XCircle };
 
 function generateFingerprint(): number {
   return Math.round((Math.random() * 0.98 + 0.01) * 100) / 100;
@@ -75,6 +85,7 @@ export default function CustomerTopupRequestPage() {
   const [fingerprint, setFingerprint] = useState(() => generateFingerprint());
   const [packages, setPackages] = useState<CreditPackage[]>([]);
   const [selectedPkg, setSelectedPkg] = useState<CreditPackage | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // حساب السعر: إذا اختار عرض يُطبّق سعره، وإلا السعر الافتراضي
   const creditNum = Math.max(0, parseInt(credits) || 0);
@@ -114,6 +125,37 @@ export default function CustomerTopupRequestPage() {
   }, [profile?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // اشتراك Realtime لتحديث حالة الطلبات لحظياً
+  useEffect(() => {
+    if (!profile?.id) return;
+    const ch = supabase
+      .channel(`customer-topup-${profile.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'wallet_topup_requests',
+        filter: `customer_id=eq.${profile.id}`,
+      }, (payload) => {
+        const updated = payload.new as WalletTopupRequest;
+        setRequests((prev) =>
+          prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
+        );
+        const scanStatus = (updated as any).scan_status as string;
+        if (updated.status === 'approved') {
+          toast.success('✅ تم تأكيد طلب شحن رصيدك!');
+        } else if (scanStatus === 'amount_mismatch') {
+          toast.warning('⚠️ المبلغ غير مطابق — تأكد من تحويل المبلغ بالقروش بالضبط.');
+        } else if (scanStatus === 'not_found') {
+          toast.info('لم يتم العثور على رسالة مطابقة. قد يستغرق بعض الوقت.');
+        } else if (updated.status === 'rejected') {
+          toast.error('تم رفض طلب الشحن. تواصل مع الدعم.');
+        }
+      })
+      .subscribe();
+    channelRef.current = ch;
+    return () => { supabase.removeChannel(ch).catch(() => {}); };
+  }, [profile?.id]);
 
   // عند اختيار عرض: ضبط الكريدت تلقائياً
   const handleSelectPackage = (pkg: CreditPackage) => {
@@ -364,23 +406,47 @@ export default function CustomerTopupRequestPage() {
             ) : (
               <div className="divide-y divide-border">
                 {requests.map((r) => {
-                  const Icon = STATUS_ICONS[r.status as keyof typeof STATUS_ICONS] ?? Clock;
+                  const scanStatus = (r as any).scan_status as string | undefined;
+                  // الحالة الفعلية: scan_status يأخذ الأولوية على status لعرض أدق
+                  const displayKey = scanStatus && STATUS_CONFIG[scanStatus]
+                    ? scanStatus
+                    : (STATUS_CONFIG[r.status] ? r.status : 'pending');
+                  const cfg = STATUS_CONFIG[displayKey];
+                  const Icon = cfg.icon;
                   const cr = (r as any).credits_requested as number | null;
                   const fp = (r as any).fingerprint_amount as number | null;
                   const auto = (r as any).matched_automatically as boolean | null;
+                  const failReason = r.failure_reason;
+
                   return (
-                    <div key={r.id} className="p-4 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">{cr ? `${cr} Credit` : `${r.amount.toFixed(2)} Credit`}</p>
-                        {fp && <p className="text-xs text-muted-foreground font-mono" dir="ltr">المبلغ: {fp.toFixed(2)} جنيه</p>}
-                        <p className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString('ar-EG')}</p>
-                        {auto && <p className="text-xs text-green-500 flex items-center gap-1 mt-0.5"><Zap className="w-3 h-3" /> موافقة تلقائية</p>}
+                    <div key={r.id} className="p-4 flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          {cr ? `${cr} Credit` : `${r.amount.toFixed(2)} Credit`}
+                        </p>
+                        {fp && (
+                          <p className="text-xs text-muted-foreground font-mono" dir="ltr">
+                            المبلغ: {fp.toFixed(2)} جنيه
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(r.created_at).toLocaleString('ar-EG')}
+                        </p>
+                        {auto && (
+                          <p className="text-xs text-green-500 flex items-center gap-1 mt-0.5">
+                            <Zap className="w-3 h-3" /> موافقة تلقائية
+                          </p>
+                        )}
+                        {failReason && (
+                          <p className="text-xs text-orange-500 mt-1 flex items-start gap-1">
+                            <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                            {failReason}
+                          </p>
+                        )}
                       </div>
-                      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0
-                        ${r.status === 'approved' ? 'bg-green-500/10 text-green-500' :
-                          r.status === 'rejected' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-500'}`}>
+                      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${cfg.colorClass}`}>
                         <Icon className="w-3.5 h-3.5" />
-                        {STATUS_LABELS[r.status] ?? r.status}
+                        {cfg.label}
                       </div>
                     </div>
                   );

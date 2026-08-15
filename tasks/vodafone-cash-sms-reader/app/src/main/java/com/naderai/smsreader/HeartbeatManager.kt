@@ -139,7 +139,7 @@ class HeartbeatManager(
         try {
             val json = org.json.JSONObject(responseBody)
 
-            // Handle commands from server (server→android test flow)
+            // معالجة الأوامر من السيرفر (server → android)
             if (json.has("commands")) {
                 val cmds = json.getJSONArray("commands")
                 for (i in 0 until cmds.length()) {
@@ -148,7 +148,7 @@ class HeartbeatManager(
                 }
             }
 
-            // Handle pending tasks
+            // قراءة المهام المعلقة
             val tasksArr = when {
                 json.has("pending_tasks") -> json.getJSONArray("pending_tasks")
                 json.has("tasks") -> json.getJSONArray("tasks")
@@ -157,9 +157,30 @@ class HeartbeatManager(
             val tasks = mutableListOf<TaskScanner.Task>()
             for (i in 0 until tasksArr.length()) {
                 val obj = tasksArr.getJSONObject(i)
+                val requestId = obj.getString("request_id")
+                val taskId = obj.getString("task_id")
+
+                // ══════════════════════════════════════════════════════════════
+                // حماية الحالات النهائية: لا نُعيد إرسال المهام التي انتهت سلفاً.
+                // الحالات النهائية في AppState: CONFIRMED, NOT_FOUND, AMOUNT_MISMATCH, FAILED, DUPLICATE
+                // ══════════════════════════════════════════════════════════════
+                val existingOrder = AppState.getOrders().firstOrNull { it.requestId == requestId }
+                val isTerminal = existingOrder != null && existingOrder.status in setOf(
+                    OrderStatus.CONFIRMED,
+                    OrderStatus.NOT_FOUND,
+                    OrderStatus.AMOUNT_MISMATCH,
+                    OrderStatus.FAILED,
+                    OrderStatus.DUPLICATE
+                )
+                if (isTerminal) {
+                    android.util.Log.d("HeartbeatManager",
+                        "Skipping terminal order $requestId (status=${existingOrder?.status?.name})")
+                    continue
+                }
+
                 val task = TaskScanner.Task(
-                    taskId = obj.getString("task_id"),
-                    requestId = obj.getString("request_id"),
+                    taskId = taskId,
+                    requestId = requestId,
                     amountRequested = obj.optDouble("amount_requested", 0.0),
                     senderPhoneRequested = obj.optString("sender_phone_requested").takeIf { it.isNotEmpty() },
                     senderNameRequested = obj.optString("sender_name_requested").takeIf { it.isNotEmpty() },
@@ -173,8 +194,10 @@ class HeartbeatManager(
                     requestCreatedAt = obj.optString("request_created_at").takeIf { it.isNotEmpty() }
                 )
                 tasks.add(task)
+
+                // تحديث أو إضافة الطلب في AppState — addOrUpdateOrder يحمي الحالات النهائية
                 AppState.addOrUpdateOrder(OrderItem(
-                    requestId = obj.getString("request_id"),
+                    requestId = requestId,
                     orderLabel = "طلب شحن",
                     expectedAmount = obj.optDouble("amount_requested", 0.0),
                     status = OrderStatus.PENDING,
@@ -185,20 +208,25 @@ class HeartbeatManager(
                     customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                     customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
                     paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
-                    taskId = obj.getString("task_id")
+                    taskId = taskId
                 ))
-                // Notify about new order
-                val orderNum = if (obj.has("order_number") && !obj.isNull("order_number")) "#${obj.getLong("order_number")}" else "#${obj.getString("request_id").take(8)}"
-                val customerInfo = obj.optString("customer_phone").takeIf { it.isNotEmpty() }
-                    ?: obj.optString("customer_email").takeIf { it.isNotEmpty() }
-                    ?: "غير معروف"
-                val timeStr = java.text.SimpleDateFormat("hh:mm a", java.util.Locale("ar")).format(java.util.Date())
-                AppState.addNotification(DeviceNotification(
-                    title = "طلب شحن جديد $orderNum",
-                    message = "${obj.optDouble("amount_requested", 0.0)} جنيه • $customerInfo • $timeStr",
-                    type = NotificationType.ORDER_NEW,
-                    referenceId = obj.getString("request_id")
-                ))
+
+                // إشعار الطلبات الجديدة فقط (لم يكن موجوداً من قبل)
+                if (existingOrder == null) {
+                    val orderNum = if (obj.has("order_number") && !obj.isNull("order_number"))
+                        "#${obj.getLong("order_number")}"
+                    else "#${requestId.take(8)}"
+                    val customerInfo = obj.optString("customer_phone").takeIf { it.isNotEmpty() }
+                        ?: obj.optString("customer_email").takeIf { it.isNotEmpty() }
+                        ?: "غير معروف"
+                    val timeStr = java.text.SimpleDateFormat("hh:mm a", java.util.Locale("ar")).format(java.util.Date())
+                    AppState.addNotification(DeviceNotification(
+                        title = "طلب شحن جديد $orderNum",
+                        message = "${obj.optDouble("amount_requested", 0.0)} جنيه • $customerInfo • $timeStr",
+                        type = NotificationType.ORDER_NEW,
+                        referenceId = requestId
+                    ))
+                }
             }
             if (tasks.isNotEmpty()) onPendingTasks(tasks)
         } catch (e: Exception) {

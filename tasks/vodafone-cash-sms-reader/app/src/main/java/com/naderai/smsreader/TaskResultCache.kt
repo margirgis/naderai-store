@@ -38,24 +38,50 @@ object TaskResultCache {
             is TaskScanner.ScanResult.NotFound -> "not_found"
             is TaskScanner.ScanResult.Failure -> "failure"
         }
-        val resultData = if (result is TaskScanner.ScanResult.Success) {
-            val m = result.message
-            org.json.JSONObject().apply {
-                put("sender_phone", m.senderPhone ?: "")
-                put("sender_name", m.senderName ?: "")
-                put("amount", m.amount ?: 0.0)
-                put("transaction_id", m.transactionId ?: "")
-                put("receiver_wallet", m.receiverWallet ?: "")
-                put("sms_body", m.body)
-                put("scanned_at", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault()).apply {
-                    timeZone = java.util.TimeZone.getTimeZone("UTC")
-                }.format(java.util.Date(m.date)))
-            }.toString()
-        } else null
+        val isoFmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault()).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        // حفظ result_data بالكامل لجميع الحالات، ليس فقط success
+        val resultData = when (result) {
+            is TaskScanner.ScanResult.Success -> {
+                val m = result.message
+                org.json.JSONObject().apply {
+                    put("sender_phone", m.senderPhone ?: "")
+                    put("sender_name", m.senderName ?: "")
+                    put("amount", m.amount ?: 0.0)
+                    put("transaction_id", m.transactionId ?: "")
+                    put("receiver_wallet", m.receiverWallet ?: "")
+                    put("sms_body", m.body)
+                    put("scanned_at", isoFmt.format(java.util.Date(m.date)))
+                }.toString()
+            }
+            is TaskScanner.ScanResult.AmountMismatch -> {
+                // حفظ المبالغ لمساعدة المسؤول على المراجعة
+                org.json.JSONObject().apply {
+                    put("found_amount", result.foundAmount)
+                    put("expected_amount", result.expectedAmount)
+                    put("sender_phone", result.foundPhone ?: "")
+                    put("scanned_at", isoFmt.format(java.util.Date()))
+                }.toString()
+            }
+            is TaskScanner.ScanResult.NotFound -> {
+                org.json.JSONObject().apply {
+                    put("reason", result.reason ?: "not_found")
+                    put("scanned_at", isoFmt.format(java.util.Date()))
+                }.toString()
+            }
+            is TaskScanner.ScanResult.Failure -> {
+                org.json.JSONObject().apply {
+                    put("reason", result.reason ?: "failure")
+                    put("scanned_at", isoFmt.format(java.util.Date()))
+                }.toString()
+            }
+        }
         val failureReason = when (result) {
             is TaskScanner.ScanResult.Failure -> result.reason
             is TaskScanner.ScanResult.NotFound -> result.reason
-            is TaskScanner.ScanResult.AmountMismatch -> "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
+            is TaskScanner.ScanResult.AmountMismatch ->
+                "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
             else -> null
         }
         val existing = get(context, taskId)
@@ -67,6 +93,7 @@ object TaskResultCache {
             put("scanned_at", System.currentTimeMillis())
         }.toString()
         prefs(context).edit().putString("$KEY_PREFIX$taskId", json).apply()
+        android.util.Log.d("TaskResultCache", "Cached $taskId → status=$status")
     }
 
     fun incrementRetry(context: Context, taskId: String) {

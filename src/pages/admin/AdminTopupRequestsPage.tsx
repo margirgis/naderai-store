@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Wallet, Loader2, CheckCircle2, XCircle, ArrowLeft, RefreshCw,
   Phone, Zap, User, Hash, Filter, Smartphone, ScanLine,
-  AlertTriangle, Clock, ShieldAlert,
+  AlertTriangle, Clock, ShieldAlert, RotateCcw, Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -126,6 +126,26 @@ export default function AdminTopupRequestsPage() {
     setProcessing(null);
   };
 
+  // إعادة فحص الطلب — للمسؤول فقط، يُنشئ مهمة فحص جديدة
+  const handleRescan = async (r: WalletTopupRequest) => {
+    if (r.status === 'approved') { toast.info('الطلب مكتمل بالفعل'); return; }
+    if (!confirm(`إعادة فحص الطلب #${r.order_number ?? r.id.slice(0, 8)}؟`)) return;
+    setProcessing(r.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase.rpc('admin_rescan_topup_request', {
+        p_admin_id: user?.id,
+        p_request_id: r.id,
+        p_reason: 'إعادة فحص يدوي من المسؤول',
+      });
+      if (error) { toast.error('فشل إعادة الفحص: ' + error.message); return; }
+      if (!data?.ok) { toast.error(data?.reason ?? 'فشل إعادة الفحص'); return; }
+      toast.success('✓ تم إرسال طلب إعادة الفحص للجهاز');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const stats = {
     total: requests.length,
     pending: requests.filter((r) => r.status === 'pending').length,
@@ -133,6 +153,17 @@ export default function AdminTopupRequestsPage() {
     approved: requests.filter((r) => r.status === 'approved').length,
     duplicate: requests.filter((r) => (r as any).scan_status === 'duplicate').length,
     amountMismatch: requests.filter((r) => (r as any).scan_status === 'amount_mismatch').length,
+    notFound: requests.filter((r) => (r as any).scan_status === 'not_found').length,
+    failed: requests.filter((r) => (r as any).scan_status === 'failed').length,
+  };
+
+  // لون حسب scan_status
+  const scanBgClass = (scanStatus?: string) => {
+    if (scanStatus === 'duplicate') return 'bg-purple-500/5';
+    if (scanStatus === 'amount_mismatch') return 'bg-orange-500/5';
+    if (scanStatus === 'not_found') return 'bg-muted/20';
+    if (scanStatus === 'failed') return 'bg-destructive/5';
+    return '';
   };
 
   return (
@@ -160,14 +191,16 @@ export default function AdminTopupRequestsPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
           {[
-            { label: 'الكل', value: stats.total, color: 'text-foreground' },
-            { label: 'معلق', value: stats.pending, color: 'text-amber-500' },
-            { label: 'فحص', value: stats.scanning, color: 'text-blue-500' },
-            { label: 'موافق', value: stats.approved, color: 'text-green-500' },
-            { label: 'مكرر', value: stats.duplicate, color: 'text-purple-500' },
-            { label: 'غير مطابق', value: stats.amountMismatch, color: 'text-orange-500' },
+            { label: 'الكل',      value: stats.total,         color: 'text-foreground' },
+            { label: 'معلق',      value: stats.pending,       color: 'text-amber-500' },
+            { label: 'فحص',       value: stats.scanning,      color: 'text-blue-500' },
+            { label: 'موافق',     value: stats.approved,      color: 'text-green-500' },
+            { label: 'مكرر',      value: stats.duplicate,     color: 'text-purple-500' },
+            { label: 'غير مطابق', value: stats.amountMismatch,color: 'text-orange-500' },
+            { label: 'لم يوجد',   value: stats.notFound,      color: 'text-muted-foreground' },
+            { label: 'فشل',       value: stats.failed,        color: 'text-destructive' },
           ].map(({ label, value, color }) => (
             <Card key={label} className="text-center p-2">
               <p className={`text-xl font-bold ${color}`}>{value}</p>
@@ -219,7 +252,7 @@ export default function AdminTopupRequestsPage() {
                   const statusCfg = STATUS_LABELS[r.status] ?? { label: r.status, variant: 'outline' as const };
 
                   return (
-                    <div key={r.id} className={`p-4 space-y-3 ${isDuplicate ? 'bg-purple-500/5' : isAmountMismatch ? 'bg-orange-500/5' : ''}`}>
+                    <div key={r.id} className={`p-4 space-y-3 ${scanBgClass(scanStatus)}`}>
                       {/* Top row */}
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -318,7 +351,7 @@ export default function AdminTopupRequestsPage() {
                         </p>
                       )}
 
-                      {/* Manual actions — for all non-final states */}
+                    {/* Manual actions — for all non-final states */}
                       {r.status !== 'approved' && r.status !== 'rejected' && !isDuplicate && (
                         <div className="flex items-center gap-2 flex-wrap">
                           <Button size="sm" className="flex-1 gap-1.5 min-w-[110px]" onClick={() => handleApprove(r)} disabled={processing === r.id}>
@@ -329,7 +362,33 @@ export default function AdminTopupRequestsPage() {
                             <XCircle className="w-3.5 h-3.5" />
                             رفض
                           </Button>
+                          {/* زر إعادة الفحص — يظهر فقط عند وجود نتيجة فحص سابقة غير مطابقة */}
+                          {(scanStatus === 'not_found' || scanStatus === 'amount_mismatch' || scanStatus === 'failed') && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="w-full gap-1.5"
+                              onClick={() => handleRescan(r)}
+                              disabled={processing === r.id}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              إعادة الفحص
+                            </Button>
+                          )}
                         </div>
+                      )}
+                      {/* زر إعادة الفحص للطلبات المكررة أيضاً — مع تحذير */}
+                      {isDuplicate && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full gap-1.5 border-purple-500/30 text-purple-600"
+                          onClick={() => handleRescan(r)}
+                          disabled={processing === r.id}
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          مراجعة يدوية للمكرر
+                        </Button>
                       )}
                     </div>
                   );

@@ -32,6 +32,8 @@ export default function AdminWalletPage() {
   // Tx history
   const [txs, setTxs] = useState<WalletTransaction[]>([]);
   const [txLoaded, setTxLoaded] = useState(false);
+  const [txPage, setTxPage] = useState(1);
+  const TX_PAGE_SIZE = 30;
 
   const loadCustomers = useCallback(async (p: number, q: string) => {
     setLoading(true);
@@ -49,15 +51,15 @@ export default function AdminWalletPage() {
   const loadTxs = useCallback(async () => {
     const { data } = await supabase
       .from('wallet_transactions')
-      .select('*, orders!order_id(reference)')
+      .select('*, profiles!customer_id(email)')
       .order('created_at', { ascending: false })
-      .limit(30);
+      .range((txPage - 1) * TX_PAGE_SIZE, txPage * TX_PAGE_SIZE - 1);
     setTxs((data ?? []) as unknown as WalletTransaction[]);
     setTxLoaded(true);
-  }, []);
+  }, [txPage]);
 
   useEffect(() => { loadCustomers(page, search); }, [page, search, loadCustomers]);
-  useEffect(() => { loadTxs(); }, [loadTxs]);
+  useEffect(() => { loadTxs(); }, [loadTxs, txPage]);
 
   const handleTopup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,7 +198,14 @@ export default function AdminWalletPage() {
 
         {/* Recent transactions */}
         <Card className="bg-card border-border">
-          <CardHeader className="pb-3"><CardTitle className="text-sm">آخر المعاملات</CardTitle></CardHeader>
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm">آخر المعاملات</CardTitle>
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" disabled={txPage <= 1} onClick={() => setTxPage(p => p - 1)}>السابق</Button>
+              <span className="text-xs text-muted-foreground self-center px-1">#{txPage}</span>
+              <Button variant="ghost" size="sm" disabled={txs.length < TX_PAGE_SIZE} onClick={() => setTxPage(p => p + 1)}>التالي</Button>
+            </div>
+          </CardHeader>
           <CardContent className="p-0">
             {!txLoaded ? (
               <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
@@ -209,29 +218,46 @@ export default function AdminWalletPage() {
                     <tr className="border-b border-border">
                       <th className="text-start py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">النوع</th>
                       <th className="text-end py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">المبلغ</th>
+                      <th className="text-end py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">قبل</th>
+                      <th className="text-end py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">بعد</th>
+                      <th className="text-start py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">العميل</th>
                       <th className="text-start py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">السبب</th>
                       <th className="text-start py-3 px-4 text-xs text-muted-foreground font-medium whitespace-nowrap">التاريخ</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {txs.map(tx => (
-                      <tr key={tx.id} className="border-b border-border/50 hover:bg-muted/20">
-                        <td className="py-2.5 px-4 whitespace-nowrap">
-                          <span className={`text-xs font-medium ${tx.type === 'credit' ? 'text-green-400' : 'text-destructive'}`}>
-                            {tx.type === 'credit' ? '+ إضافة' : '- خصم'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-4 text-end font-mono text-xs whitespace-nowrap">
-                          {tx.amount?.toFixed(1)} Credit
-                        </td>
-                        <td className="py-2.5 px-4 text-xs text-muted-foreground whitespace-nowrap max-w-48 truncate">
-                          {tx.reason}
-                        </td>
-                        <td className="py-2.5 px-4 text-xs text-muted-foreground whitespace-nowrap">
-                          {new Date(tx.created_at).toLocaleDateString('ar-SA')}
-                        </td>
-                      </tr>
-                    ))}
+                    {txs.map(tx => {
+                      const balBefore = (tx as any).balance_before as number | null;
+                      const balAfter = (tx as any).balance_after as number | null;
+                      const custEmail = (tx as any).profiles?.email as string | null;
+                      return (
+                        <tr key={tx.id} className="border-b border-border/50 hover:bg-muted/20">
+                          <td className="py-2.5 px-4 whitespace-nowrap">
+                            <span className={`text-xs font-semibold ${tx.type === 'credit' ? 'text-green-500' : 'text-destructive'}`}>
+                              {tx.type === 'credit' ? '+ إضافة' : '- خصم'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 text-end font-mono text-xs whitespace-nowrap font-semibold">
+                            {tx.amount?.toFixed(1)}
+                          </td>
+                          <td className="py-2.5 px-4 text-end font-mono text-xs whitespace-nowrap text-muted-foreground">
+                            {balBefore != null ? balBefore.toFixed(1) : '—'}
+                          </td>
+                          <td className="py-2.5 px-4 text-end font-mono text-xs whitespace-nowrap text-primary font-semibold">
+                            {balAfter != null ? balAfter.toFixed(1) : '—'}
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-muted-foreground whitespace-nowrap max-w-32 truncate">
+                            {custEmail ?? tx.customer_id?.slice(0, 8) ?? '—'}
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-muted-foreground whitespace-nowrap max-w-48 truncate">
+                            {tx.reason}
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(tx.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
