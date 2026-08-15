@@ -1,4 +1,5 @@
 package com.naderai.smsreader
+import com.naderai.smsreader.BuildConfig
 
 import android.os.Build
 import android.os.Bundle

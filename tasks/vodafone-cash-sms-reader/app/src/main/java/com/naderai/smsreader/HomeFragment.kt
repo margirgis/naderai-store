@@ -1,4 +1,5 @@
 package com.naderai.smsreader
+import com.naderai.smsreader.BuildConfig
 
 import android.os.Bundle
 import android.view.LayoutInflater
