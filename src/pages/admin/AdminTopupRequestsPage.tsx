@@ -66,8 +66,9 @@ export default function AdminTopupRequestsPage() {
   // Realtime subscription
   useEffect(() => {
     load();
+    const channelName = `admin-topup-realtime-${crypto.randomUUID()}`;
     const channel = supabase
-      .channel('admin-topup-realtime')
+      .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wallet_topup_requests' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const newRow = payload.new as WalletTopupRequest;
@@ -84,7 +85,7 @@ export default function AdminTopupRequestsPage() {
       })
       .subscribe();
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(channel).catch(() => {}); };
   }, [load, filter]);
 
   const handleApprove = async (r: WalletTopupRequest) => {
@@ -221,7 +222,14 @@ export default function AdminTopupRequestsPage() {
                       {/* Top row */}
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{c?.email ?? r.customer_id.slice(0, 12)}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-foreground truncate">{c?.email ?? r.customer_id.slice(0, 12)}</p>
+                            {r.order_number && (
+                              <Badge variant="outline" className="text-[10px] font-mono gap-1 shrink-0">
+                                <Hash className="w-3 h-3" />#{r.order_number}
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground font-mono">{r.id.slice(0, 12)}…</p>
                           <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                             <Clock className="w-3 h-3" />

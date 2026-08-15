@@ -51,7 +51,7 @@ export default function AdminSmsDevicesPage() {
   useEffect(() => {
     load();
     const channel = supabase
-      .channel('admin-devices-realtime')
+      .channel(`admin-devices-realtime-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sms_device_status' }, (payload) => {
         if (payload.eventType === 'DELETE') {
           setDevices((prev) => prev.filter((d) => d.id !== (payload.old as any).id));
@@ -74,7 +74,7 @@ export default function AdminSmsDevicesPage() {
       })
       .subscribe();
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(channel).catch(() => {}); };
   }, [load]);
 
   const deleteDevice = async (id: string) => {
@@ -111,9 +111,10 @@ export default function AdminSmsDevicesPage() {
     }
   };
 
+  // 120s threshold — heartbeat every 30s, allow up to 4 missed beats
   const isOnline = (device: SmsDevice) => {
     if (!device.last_heartbeat_at) return false;
-    return Date.now() - new Date(device.last_heartbeat_at).getTime() < 90_000;
+    return Date.now() - new Date(device.last_heartbeat_at).getTime() < 120_000;
   };
 
   const pendingForDevice = (deviceId: string) =>

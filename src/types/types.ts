@@ -67,6 +67,7 @@ export interface WalletTopupRequest {
   transaction_reference: string | null;
   fingerprint_amount: number | null;
   credits_requested: number | null;
+  order_number: number | null;
   assigned_device_id: string | null;
   scanning_started_at: string | null;
   matched_automatically: boolean | null;

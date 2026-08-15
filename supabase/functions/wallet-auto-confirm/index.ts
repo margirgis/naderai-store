@@ -263,19 +263,26 @@ Deno.serve(async (req: Request) => {
       is_active: true,
     }, { onConflict: 'device_id' });
 
+    // Re-dispatch any pending topup requests that have no active task
+    // (created while no device was online, or after reconnection)
+    const { data: retryResult } = await db.rpc('retry_pending_topup_requests', {
+      p_device_id: payload.device_id,
+    });
+    const newlyDispatched = (retryResult as any)?.dispatched ?? 0;
+
     const { data: result } = await db.rpc('get_device_pending_tasks', {
       p_device_id: payload.device_id,
     });
 
-    // result is now {tasks: [...], commands: [...]}
+    // result is {tasks: [...], commands: [...]}
     const tasks = (result as any)?.tasks ?? [];
     const commands = (result as any)?.commands ?? [];
 
-    // Notify admin on first heartbeat if device just registered
-    if (tasks.length > 0) {
+    // Notify admin when new tasks are dispatched to device on this heartbeat
+    if (newlyDispatched > 0) {
       await db.rpc('create_admin_notification', {
-        p_title: `${tasks.length} طلب جديد للجهاز`,
-        p_message: `الجهاز ${payload.device_id.slice(0,12)} لديه ${tasks.length} مهمة`,
+        p_title: `تم إرسال ${newlyDispatched} طلب للجهاز 📱`,
+        p_message: `الجهاز ${payload.device_model ?? payload.device_id.slice(0,12)} استلم ${newlyDispatched} مهمة جديدة`,
         p_event_type: 'order_dispatched',
         p_reference_id: payload.device_id,
         p_device_id: payload.device_id,
@@ -288,6 +295,7 @@ Deno.serve(async (req: Request) => {
       status: 'online',
       pending_tasks: tasks,
       commands,
+      newly_dispatched: newlyDispatched,
     });
   }
 
