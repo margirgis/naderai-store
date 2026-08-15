@@ -1,0 +1,64 @@
+name: Build Android APK Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version (e.g., 1.0.3)'
+        required: true
+        default: '1.0.3'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tasks/vodafone-cash-sms-reader
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Grant execute permission
+        run: chmod +x ./gradlew || true
+
+      - name: Build Release APK
+        run: gradle :app:assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: naderai-sms-reader-release
+          path: tasks/vodafone-cash-sms-reader/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+
+      - name: Rename APK
+        run: mv app/build/outputs/apk/release/app-release-unsigned.apk "naderai-sms-reader-v${{ github.event.inputs.version }}.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Nader AI SMS Reader v${{ github.event.inputs.version }}
+          body: |
+            إصدار جديد من Nader AI SMS Reader
+            - توصيل الجهاز بالموقع عبر heartbeat
+            - فحص SMS تلقائياً لطلبات الشحن
+            - إرسال نتيجة الفحص للموقع وموافقة تلقائية
+          files: tasks/vodafone-cash-sms-reader/naderai-sms-reader-v${{ github.event.inputs.version }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
