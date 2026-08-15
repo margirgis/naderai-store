@@ -47,7 +47,11 @@ class OrdersFragment : Fragment() {
                 val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
                 if (webhookUrl.isNotEmpty() && order.taskId != null) {
                     android.widget.Toast.makeText(requireContext(), "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
+<<<<<<< HEAD
                     val body = mutableMapOf<String, Any>(
+=======
+                    val body = mapOf(
+>>>>>>> 2845d6c (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
                         "action" to "task_result",
                         "device_id" to HeartbeatManager.getDeviceId(requireContext()),
                         "task_id" to order.taskId,
@@ -57,10 +61,18 @@ class OrdersFragment : Fragment() {
                             "manual_confirm" to true,
                             "confirmed_by" to "device_admin",
                             "amount" to order.expectedAmount,
+<<<<<<< HEAD
                             "sender_phone" to (order.customerPhone ?: ""),
                             "transaction_id" to "manual-${System.currentTimeMillis()}",
                             "sms_body" to "تم تأكيد الطلب يدوياً من الجهاز"
                         )
+=======
+                            "sender_phone" to order.customerPhone,
+                            "transaction_id" to "manual-${System.currentTimeMillis()}",
+                            "sms_body" to "تم تأكيد الطلب يدوياً من الجهاز"
+                        ),
+                        "failure_reason" to null
+>>>>>>> 2845d6c (Initial miaoda project setup with React TypeScript Vite template 24bcfe376599d1be4d3f212bf5d9cffa4aa58f41 no sync)
                     )
                     WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, message, _ ->
                         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
