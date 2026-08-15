@@ -138,7 +138,7 @@ object AppState {
 
     /** تحديث عداد المحاولات والعداد التنازلي في كارت الطلب */
     fun updateOrderScanProgress(requestId: String, attempt: Int, maxAttempts: Int, countdown: Int) {
-        val current = orders.value?.toMutableList() ?: return
+        val current = orders.value?.toMutableList() ?: mutableListOf()
         val idx = current.indexOfFirst { it.requestId == requestId }
         if (idx >= 0) {
             current[idx] = current[idx].copy(
@@ -148,8 +148,24 @@ object AppState {
                 nextScanCountdown = countdown,
                 updatedAt = System.currentTimeMillis()
             )
-            orders.postValue(current)
+        } else {
+            // لو الطلب لسه مظهرش من الـ heartbeat، نعمل order مؤقت عشان يبين إن الفحص بدأ
+            current.add(
+                OrderItem(
+                    requestId = requestId,
+                    orderLabel = "طلب شحن",
+                    expectedAmount = 0.0,
+                    status = OrderStatus.SCANNING,
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    scanAttempt = attempt,
+                    maxAttempts = maxAttempts,
+                    nextScanCountdown = countdown
+                )
+            )
         }
+        orders.postValue(current)
+        pendingCount.postValue(current.count { it.status == OrderStatus.PENDING || it.status == OrderStatus.SCANNING })
     }
 
     fun addOrUpdateOrder(order: OrderItem) {

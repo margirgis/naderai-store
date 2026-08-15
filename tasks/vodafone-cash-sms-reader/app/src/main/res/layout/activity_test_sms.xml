@@ -26,6 +26,14 @@
             android:alpha="0.7"
             android:layout_marginBottom="12dp" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="الخطوة 1: افحص الصق النص (اختبار الـ Regex)"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp" />
+
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -35,7 +43,7 @@
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/smsInput"
                 android:layout_width="match_parent"
-                android:layout_height="180dp"
+                android:layout_height="140dp"
                 android:gravity="top|start"
                 android:inputType="textMultiLine"
                 android:textSize="14sp" />
@@ -70,14 +78,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="افحص" />
+                android:text="افحص النص" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/resultTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="نتيجة الفحص"
+            android:text="نتيجة فحص النص"
             android:textSize="16sp"
             android:textStyle="bold"
             android:layout_marginTop="20dp"
@@ -103,6 +111,53 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="16dp"
+            android:background="?android:attr/dividerVertical" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="الخطوة 2: فحص صندوق الرسائل الحقيقي"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="هنا التطبيق بيدخل على رسائل الجهاز وبيقرا رسائل فودافون كاش اللي موجودة فعلياً."
+            android:textSize="13sp"
+            android:alpha="0.7" />
+
+        <Button
+            android:id="@+id/btnScanInbox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="📱 فحص رسائل الجهاز الحقيقية" />
+
+        <TextView
+            android:id="@+id/inboxResultTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="رسائل فودافون كاش في الجهاز"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/inboxResultText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/instructions"
             android:layout_width="match_parent"
@@ -112,7 +167,8 @@
 1. افتح رسائل فودافون كاش في الجهاز.
 2. انسخ الرسالة الكاملة (اضغط مطولاً ثم نسخ).
 3. ارجع للتطبيق والصقها في المربع فوق.
-4. اضغط 'افحص'.
+4. اضغط 'افحص النص'.
+5. اضغط 'فحص رسائل الجهاز الحقيقية' للتأكد إن التطبيق بيقدر يقرأ الرسائل.
 
 لو ظهر '✅ تم التطابق' مع المبلغ ورقم المحفظة ورقم العملية — يبقى التطبيق بيقرأ الرسالة صح.
 لو ظهر '❌ لا توجد مطابقة' — ابعت الرسالة لي عشان أعدّل الـ Regex."

@@ -1,16 +1,25 @@
 package com.naderai.smsreader
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.naderai.smsreader.databinding.ActivityTestSmsBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * شاشة تجربة فحص رسالة فودافون كاش.
- * تسمح للمستخدم بلصق رسالة حقيقية والتحقق مما يستخرجه التطبيق.
+ * تسمح للمستخدم بلصق رسالة حقيقية والتحقق مما يستخرجه التطبيق،
+ * أو بقراءة صندوق الرسائل الحقيقي للتأكد إن التطبيق بيقرأ الرسائل.
  */
 class TestSmsActivity : AppCompatActivity() {
 
@@ -26,6 +35,7 @@ class TestSmsActivity : AppCompatActivity() {
         binding.btnPaste.setOnClickListener { pasteFromClipboard() }
         binding.btnSample.setOnClickListener { loadSample() }
         binding.btnScan.setOnClickListener { scanMessage() }
+        binding.btnScanInbox.setOnClickListener { scanRealInbox() }
     }
 
     private fun pasteFromClipboard() {
@@ -51,7 +61,6 @@ class TestSmsActivity : AppCompatActivity() {
             return
         }
 
-        // نستخدم نفس الـ parser الموجود في TaskScanner
         val parsed = TaskScanner.testParseSms(text)
         val result = buildString {
             appendLine("المبلغ: ${parsed.amount?.toString() ?: "—"}")
@@ -66,17 +75,48 @@ class TestSmsActivity : AppCompatActivity() {
         binding.resultTitle.visibility = View.VISIBLE
         binding.resultText.visibility = View.VISIBLE
 
-        val isMatch = parsed.amount != null && parsed.senderPhone != null && parsed.transactionId != null
+        // التطابق التام يحتاج صيغة فودافون كاش الرسمية + استخراج كل البيانات
+        val isMatch = TaskScanner.isOfficialVodafoneCashMessage(text) &&
+                parsed.amount != null &&
+                parsed.senderPhone != null &&
+                parsed.transactionId != null
+
         binding.matchBadge.also { badge ->
             badge.visibility = View.VISIBLE
             if (isMatch) {
-                badge.text = "✅ تم التطابق — الرسالة مقروءة"
+                badge.text = "✅ تم التطابق — الرسالة فودافون كاش رسمية"
                 badge.setBackgroundColor(resources.getColor(android.R.color.holo_green_dark, theme))
                 badge.setTextColor(resources.getColor(android.R.color.white, theme))
             } else {
-                badge.text = "❌ لا توجد مطابقة تامة"
+                badge.text = "❌ لا توجد مطابقة تامة — الرسالة مش فودافون كاش أو نقص بيانات"
                 badge.setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, theme))
                 badge.setTextColor(resources.getColor(android.R.color.white, theme))
+            }
+        }
+    }
+
+    private fun scanRealInbox() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "مفيش إذن قراءة الرسائل — اديه من إعدادات الصلاحيات", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        binding.inboxResultTitle.visibility = View.VISIBLE
+        binding.inboxResultText.text = "⏳ بيقرأ صندوق الرسائل..."
+        binding.inboxResultText.visibility = View.VISIBLE
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val messages = TaskScanner.scanInboxForTest(this@TestSmsActivity)
+            val text = when {
+                messages.isEmpty() -> "📭 مفيش رسائل فودافون كاش في الجهاز.\n\nتأكد إن:\n• في رسالة واصلة من فودافون كاش.\n• تم منح إذن قراءة الرسائل."
+                else -> messages.take(5).mapIndexed { index, sms ->
+                    val official = TaskScanner.isOfficialVodafoneCashMessage(sms.body)
+                    """${index + 1}. ${if (official) "✅" else "⚠️"} ${sms.body.take(60)}…
+المبلغ: ${sms.amount ?: "—"} | المحوّل: ${sms.senderPhone ?: "—"} | العملية: ${sms.transactionId ?: "—"}"""
+                }.joinToString("\n\n---\n\n")
+            }
+            withContext(Dispatchers.Main) {
+                binding.inboxResultText.text = text
             }
         }
     }

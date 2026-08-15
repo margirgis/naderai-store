@@ -194,6 +194,16 @@
             android:gravity="end">
 
             <Button
+                android:id="@+id/btnStartScan"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="ابدأ الفحص"
+                android:textSize="12sp"
+                android:layout_marginEnd="6dp"
+                android:visibility="gone" />
+
+            <Button
                 android:id="@+id/btnRescan"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"

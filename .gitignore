@@ -44,3 +44,6 @@ history/*.json
 .vite
 historical_context.txt
 # /tasks  # commented: keep Android project under tasks/vodafone-cash-sms-reader
+/tasks/*.jpg
+/tasks/*.jpeg
+/tasks/*.png

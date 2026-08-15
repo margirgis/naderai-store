@@ -45,10 +45,9 @@ class OrdersFragment : Fragment() {
 
         adapter = OrderAdapter(
             onConfirmManual = { order ->
-                // تأكيد يدوي: إرسال نتيجة تأكيد للسيرفر
-                val prefs = requireContext().getSharedPreferences("naderai_prefs", android.content.Context.MODE_PRIVATE)
-                val webhookUrl = prefs.getString("webhook_url", "") ?: ""
-                val secret = prefs.getString("secret_key", "") ?: ""
+                val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                val webhookUrl = SupabaseConfig.getWebhookUrl(prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)) ?: ""
+                val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
                 if (webhookUrl.isNotEmpty() && order.taskId != null) {
                     android.widget.Toast.makeText(requireContext(), "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
@@ -89,38 +88,10 @@ class OrdersFragment : Fragment() {
                 }
             },
             onRescan = { order ->
-                // إعادة الفحص: إزالة من الكاش وإعادة الفحص
-                val prefs = requireContext().getSharedPreferences("naderai_prefs", android.content.Context.MODE_PRIVATE)
-                val webhookUrl = prefs.getString("webhook_url", "") ?: ""
-                val secret = prefs.getString("secret_key", "") ?: ""
-                if (order.taskId != null && webhookUrl.isNotEmpty()) {
-                    android.widget.Toast.makeText(requireContext(), "🔍 جاري إعادة الفحص…", android.widget.Toast.LENGTH_SHORT).show()
-                    AppState.updateOrderStatus(order.requestId, OrderStatus.SCANNING)
-                    val task = TaskScanner.Task(
-                        taskId = order.taskId,
-                        requestId = order.requestId,
-                        amountRequested = order.expectedAmount,
-                        senderPhoneRequested = order.customerPhone,
-                        senderNameRequested = null,
-                        fingerprintAmount = null,
-                        creditsAmount = order.creditsRequested?.toDouble(),
-                        orderNumber = order.orderNumber,
-                        creditsRequested = order.creditsRequested,
-                        customerEmail = order.customerEmail,
-                        customerPhone = order.customerPhone,
-                        paymentMethod = order.paymentMethod,
-                        requestCreatedAt = null
-                    )
-                    TaskScanner.scanAndReport(requireContext(), task, webhookUrl, secret) { result, success ->
-                        val newStatus = when (result) {
-                            is TaskScanner.ScanResult.Success -> OrderStatus.CONFIRMED
-                            is TaskScanner.ScanResult.AmountMismatch -> OrderStatus.AMOUNT_MISMATCH
-                            is TaskScanner.ScanResult.NotFound -> OrderStatus.NOT_FOUND
-                            else -> OrderStatus.FAILED
-                        }
-                        AppState.updateOrderStatus(order.requestId, newStatus)
-                    }
-                }
+                startTask(order, "🔍 جاري إعادة الفحص…")
+            },
+            onStartScan = { order ->
+                startTask(order, "🔍 جاري بدء الفحص…")
             }
         )
         binding.ordersRecycler.layoutManager = LinearLayoutManager(requireContext())
@@ -134,6 +105,38 @@ class OrdersFragment : Fragment() {
                 "لا توجد طلبات في حالة ${filterStatus!!.label}"
             else "لا توجد طلبات بعد"
         }
+    }
+
+    private fun startTask(order: OrderItem, toast: String) {
+        if (order.taskId == null) {
+            android.widget.Toast.makeText(requireContext(), "لا يوجد task_id لهذا الطلب", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        val webhookUrl = SupabaseConfig.getWebhookUrl(prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)) ?: ""
+        val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
+        if (webhookUrl.isEmpty() || secret.isEmpty()) {
+            android.widget.Toast.makeText(requireContext(), "إعدادات الـ webhook غير مكتملة", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        android.widget.Toast.makeText(requireContext(), toast, android.widget.Toast.LENGTH_SHORT).show()
+        val task = TaskScanner.Task(
+            taskId = order.taskId,
+            requestId = order.requestId,
+            amountRequested = order.expectedAmount,
+            senderPhoneRequested = order.customerPhone,
+            senderNameRequested = null,
+            fingerprintAmount = null,
+            creditsAmount = order.creditsRequested?.toDouble(),
+            orderNumber = order.orderNumber,
+            creditsRequested = order.creditsRequested,
+            customerEmail = order.customerEmail,
+            customerPhone = order.customerPhone,
+            paymentMethod = order.paymentMethod,
+            requestCreatedAt = null
+        )
+        SmsMonitorService.forceScanTask(requireContext(), task)
     }
 
     override fun onDestroyView() {

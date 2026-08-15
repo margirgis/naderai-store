@@ -13,7 +13,8 @@ import java.util.*
 
 class OrderAdapter(
     private val onConfirmManual: ((OrderItem) -> Unit)? = null,
-    private val onRescan: ((OrderItem) -> Unit)? = null
+    private val onRescan: ((OrderItem) -> Unit)? = null,
+    private val onStartScan: ((OrderItem) -> Unit)? = null
 ) : ListAdapter<OrderItem, OrderAdapter.VH>(DIFF) {
 
     companion object {
@@ -91,13 +92,18 @@ class OrderAdapter(
                 binding.orderScanProgress.visibility = View.GONE
             }
 
-            // أزرار الإجراءات لحالات تحتاج تدخل يدوي
+            // أزرار الإجراءات: يبدأ الفحص للطلبات المعلقة، وتأكيد/إعادة للحالات النهائية
             val showActions = order.status in listOf(
+                OrderStatus.PENDING, OrderStatus.SCANNING,
                 OrderStatus.AMOUNT_MISMATCH, OrderStatus.NOT_FOUND, OrderStatus.FAILED
             )
             binding.actionDivider.visibility = if (showActions) View.VISIBLE else View.GONE
             binding.actionButtons.visibility = if (showActions) View.VISIBLE else View.GONE
 
+            binding.btnStartScan.visibility = if (order.status == OrderStatus.PENDING) View.VISIBLE else View.GONE
+            binding.btnRescan.visibility = if (order.status != OrderStatus.PENDING) View.VISIBLE else View.GONE
+
+            binding.btnStartScan.setOnClickListener { onStartScan?.invoke(order) }
             binding.btnConfirmManual.setOnClickListener { onConfirmManual?.invoke(order) }
             binding.btnRescan.setOnClickListener { onRescan?.invoke(order) }
         }

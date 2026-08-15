@@ -3,8 +3,10 @@ package com.naderai.smsreader
 import android.content.Context
 import android.provider.Telephony
 import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -15,12 +17,18 @@ import java.util.*
 object TaskScanner {
 
     private const val TAG = "TaskScanner"
-    private const val MAX_SCAN_ATTEMPTS = 3
+    const val MAX_SCAN_ATTEMPTS = 3
     private const val SCAN_INTERVAL_MS = 20_000L
 
     private val KEYWORDS = listOf(
         "فودافون كاش", "vodafone cash", "استلمت", "لقد استلمت",
         "تم استلام", "received egp", "you have received", "تحويل", "مبلغ"
+    )
+
+    // الشروط اللازمة لاعتبار الرسالة رسالة فودافون كاش رسمية
+    private val MANDATORY_KEYWORDS = listOf(
+        "فودافون كاش",
+        "vodafone cash"
     )
 
     data class Task(
@@ -62,31 +70,50 @@ object TaskScanner {
         secret: String,
         onResult: ((ScanResult, Boolean) -> Unit)? = null
     ) {
-        CoroutineScope(Dispatchers.IO).launch {
+        val handler = CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "Scan crashed for task ${task.taskId}: ${e.message}", e)
+            AppState.updateOrderStatus(task.requestId, OrderStatus.FAILED)
+            AppState.addNotification(DeviceNotification(
+                title = "تعطّل الفحص",
+                message = "خطأ داخلي: ${e.message}",
+                type = NotificationType.ERROR,
+                referenceId = task.requestId
+            ))
+            sendTaskResult(context, task, ScanResult.Failure("خطأ داخلي: ${e.message}"), webhookUrl, secret) { _ ->
+                onResult?.invoke(ScanResult.Failure("خطأ داخلي: ${e.message}"), false)
+            }
+        }
+
+        CoroutineScope(Dispatchers.IO + SupervisorJob() + handler).launch {
             var attempt = 0
             var lastResult: ScanResult = ScanResult.NotFound("لم يبدأ الفحص")
-            while (attempt < MAX_SCAN_ATTEMPTS) {
-                attempt++
-                // تحديث UI: المحاولة الحالية
-                AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
-                Log.d(TAG, "Scan attempt $attempt/${MAX_SCAN_ATTEMPTS} for task ${task.taskId}")
-                lastResult = scanInbox(context, task)
-                if (lastResult is ScanResult.Success) break
+            try {
+                while (attempt < MAX_SCAN_ATTEMPTS) {
+                    attempt++
+                    // تحديث UI: المحاولة الحالية
+                    AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
+                    Log.d(TAG, "Scan attempt $attempt/${MAX_SCAN_ATTEMPTS} for task ${task.taskId}")
+                    lastResult = scanInbox(context, task)
+                    if (lastResult is ScanResult.Success) break
 
-                if (attempt < MAX_SCAN_ATTEMPTS) {
-                    // عداد تنازلي 20 ثانية مع تحديث UI كل ثانية
-                    var remaining = (SCAN_INTERVAL_MS / 1000).toInt()
-                    while (remaining > 0) {
-                        AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, remaining)
-                        kotlinx.coroutines.delay(1_000L)
-                        remaining--
+                    if (attempt < MAX_SCAN_ATTEMPTS) {
+                        // عداد تنازلي 20 ثانية مع تحديث UI كل ثانية
+                        var remaining = (SCAN_INTERVAL_MS / 1000).toInt()
+                        while (remaining > 0) {
+                            AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, remaining)
+                            kotlinx.coroutines.delay(1_000L)
+                            remaining--
+                        }
                     }
                 }
-            }
-            // إرسال النتيجة النهائية مرة واحدة فقط
-            AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
-            sendTaskResult(context, task, lastResult, webhookUrl, secret) { success ->
-                onResult?.invoke(lastResult, success)
+                // إرسال النتيجة النهائية مرة واحدة فقط
+                AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
+                sendTaskResult(context, task, lastResult, webhookUrl, secret) { success ->
+                    onResult?.invoke(lastResult, success)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Scan exception for task ${task.taskId}: ${e.message}", e)
+                throw e
             }
         }
     }
@@ -115,7 +142,7 @@ object TaskScanner {
                 val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
                 val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
 
-                if (isVodafoneCashMessage(body)) {
+                if (isOfficialVodafoneCashMessage(body)) {
                     val parsed = parseSmsBody(body)
                     val normalized = normalizeEgyptianPhone(parsed.senderPhone ?: sender)
                     val requested = normalizeEgyptianPhone(task.senderPhoneRequested ?: "")
@@ -137,7 +164,8 @@ object TaskScanner {
                         date = date,
                         amountMatch = amountMatch,
                         phoneMatch = phoneMatch,
-                        score = (if (amountMatch) 2 else 0) + (if (phoneMatch) 2 else 0)
+                        score = (if (amountMatch) 2 else 0) + (if (phoneMatch) 2 else 0),
+                        receiverWallet = parsed.receiverWallet
                     ))
                 }
             }
@@ -223,11 +251,59 @@ object TaskScanner {
         return KEYWORDS.any { body.contains(it, ignoreCase = true) }
     }
 
+    /**
+     * التحقق من أن الرسالة فودافون كاش رسمية: لازم تحتوي على كلمات "فودافون كاش"
+     * بالإضافة لكلمات مثل "استلام" أو "جنيه" أو "رقم العملية".
+     */
+    fun isOfficialVodafoneCashMessage(body: String): Boolean {
+        if (MANDATORY_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
+        val hasAmount = Regex("""(?:تم\s+استلام|استلام|مبلغ|استلمت)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|egp)""", RegexOption.IGNORE_CASE)
+            .find(body) != null
+        val hasTransaction = Regex("""(?:رقم\s+العملية|رقم العملية|transaction|كود\s+المعاملة)""", RegexOption.IGNORE_CASE)
+            .find(body) != null
+        return hasAmount || hasTransaction
+    }
+
+    /**
+     * فحص صندوق الرسائل الحقيقي للاختبار — بيرجع كل رسائل فودافون كاش الرسمية.
+     */
+    fun scanInboxForTest(context: Context): List<ParsedSms> {
+        if (context.checkSelfPermission(android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return emptyList()
+        }
+        val results = mutableListOf<ParsedSms>()
+        val cursor = context.contentResolver.query(
+            Telephony.Sms.Inbox.CONTENT_URI,
+            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            null, null,
+            Telephony.Sms.DATE + " DESC LIMIT 50"
+        ) ?: return emptyList()
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
+                if (isOfficialVodafoneCashMessage(body)) {
+                    val parsed = parseSmsBody(body)
+                    val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
+                    results.add(parsed.copy(date = date))
+                }
+            }
+        }
+        return results
+    }
+
     // Enhanced SMS parser — extracts transaction_id, receiver_wallet, sender_name
     /**
      * نسخة عامة من parseSmsBody للاختبار السريع دون قراءة صندوق الرسائل.
      */
     fun testParseSms(text: String): ParsedSms = parseSmsBody(text)
+
+    fun strictMatch(text: String): Boolean {
+        val parsed = parseSmsBody(text)
+        return isOfficialVodafoneCashMessage(text) &&
+                parsed.amount != null &&
+                parsed.senderPhone != null &&
+                parsed.transactionId != null
+    }
 
     private fun parseSmsBody(text: String): ParsedSms {
         // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────

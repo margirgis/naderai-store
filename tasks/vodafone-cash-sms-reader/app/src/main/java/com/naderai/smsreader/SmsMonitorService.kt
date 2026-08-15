@@ -59,15 +59,40 @@ class SmsMonitorService : Service() {
         private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
             val cached = TaskResultCache.get(context, task.taskId)
             if (cached != null) {
+                applyCachedStatus(task.requestId, cached)
                 resendCachedResult(context, task, cached, webhookUrl, secret)
                 return
             }
+            // تأكيد بداية الفحص في الـ UI
+            AppState.updateOrderScanProgress(task.requestId, 1, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
             TaskScanner.scanAndReport(context, task, webhookUrl, secret) { result, success ->
                 TaskResultCache.put(context, task.taskId, result)
                 if (!success) {
                     TaskResultCache.incrementRetry(context, task.taskId)
                 }
             }
+        }
+
+        private fun applyCachedStatus(requestId: String, cached: TaskResultCache.CachedResult) {
+            val status = when (cached.status) {
+                "success" -> OrderStatus.CONFIRMED
+                "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
+                "not_found" -> OrderStatus.NOT_FOUND
+                "failure" -> OrderStatus.FAILED
+                else -> OrderStatus.PENDING
+            }
+            if (status != OrderStatus.PENDING) AppState.updateOrderStatus(requestId, status)
+        }
+
+        @JvmStatic
+        fun forceScanTask(context: Context, task: TaskScanner.Task) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+            val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl) ?: return
+            val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
+            TaskResultCache.remove(context, task.taskId)
+            AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
+            processTask(context, task, webhookUrl, secret)
         }
 
         private fun resendCachedResult(context: Context, task: TaskScanner.Task, cached: TaskResultCache.CachedResult, webhookUrl: String, secret: String) {
@@ -165,15 +190,16 @@ class SmsMonitorService : Service() {
         }
 
         tasks.forEach { task ->
-            // ✅ تخطي الطلبات التي تم فحصها بالفعل (كاش موجود) — منع التكرار
             val cached = TaskResultCache.get(context, task.taskId)
             if (cached != null) {
                 android.util.Log.d("SmsMonitorService", "Task ${task.taskId} already cached, skipping re-scan")
+                applyCachedStatus(task.requestId, cached)
+                resendCachedResult(context, task, cached, webhookUrl, secret)
                 return@forEach
             }
             processTask(context, task, webhookUrl, secret)
         }
-        updateNotification("يتابع ${tasks.size} طلب...")
+        updateNotification("جاري فحص ${tasks.size} طلب...")
     }
 
     override fun onDestroy() {

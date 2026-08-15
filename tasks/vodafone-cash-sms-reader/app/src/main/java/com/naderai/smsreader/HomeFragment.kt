@@ -1,6 +1,7 @@
 package com.naderai.smsreader
 import com.naderai.smsreader.BuildConfig
 
+import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -36,6 +37,19 @@ class HomeFragment : Fragment() {
         binding.deviceModelValue.text = android.os.Build.MODEL ?: "—"
         binding.androidVersionValue.text = android.os.Build.VERSION.RELEASE ?: "—"
         binding.appVersionValue.text = BuildConfig.VERSION_NAME
+        refreshPermissionStatus()
+    }
+
+    private fun refreshPermissionStatus() {
+        val ctx = requireContext()
+        binding.permissionSmsValue.text = if (PermissionsHelper.hasSmsPermission(ctx)) "✅ ممنوح" else "❌ ممنوح"
+        binding.permissionBatteryValue.text = if (PermissionsHelper.isBatteryOptimizationIgnored(ctx)) "✅ نعم" else "❌ لا"
+        binding.serviceRunningValue.text = if (isServiceRunning(ctx)) "✅ تعمل" else "❌ متوقفة"
+    }
+
+    private fun isServiceRunning(context: Context): Boolean {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return manager.getRunningServices(Integer.MAX_VALUE).any { it.service.className == SmsMonitorService::class.java.name }
     }
 
     private fun observeState() {
