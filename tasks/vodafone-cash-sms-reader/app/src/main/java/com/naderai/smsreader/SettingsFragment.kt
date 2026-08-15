@@ -26,6 +26,7 @@ class SettingsFragment : Fragment() {
 
         binding.saveButton.setOnClickListener { saveConfig() }
         binding.testConnectionButton.setOnClickListener { testConnection() }
+        binding.registerButton.setOnClickListener { forceRegister() }
         binding.clearQueueButton.setOnClickListener { clearRetryQueue() }
     }
 
@@ -41,16 +42,30 @@ class SettingsFragment : Fragment() {
         binding.deviceIdValue.text = HeartbeatManager.getDeviceId(ctx)
         binding.deviceModelValue.text = Build.MODEL ?: "—"
         binding.androidVersionValue.text = Build.VERSION.RELEASE ?: "—"
-        binding.appVersionValue.text = "1.0.4"
+        binding.appVersionValue.text = "1.0.5"
         binding.retryQueueSize.text = "الطابور: ${RetryQueue.size(ctx)} عنصر"
 
         AppState.isConnected.observe(viewLifecycleOwner) { connected ->
-            binding.connectionStatusValue.text = if (connected) "✅ متصل" else "❌ غير متصل"
+            updateConnectionLabel(connected, AppState.isRegistered.value)
+        }
+        AppState.isRegistered.observe(viewLifecycleOwner) { registered ->
+            updateConnectionLabel(AppState.isConnected.value, registered)
         }
         AppState.lastSyncTime.observe(viewLifecycleOwner) { ts ->
             binding.lastSyncValue.text = if (ts != null)
                 java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(ts))
             else "—"
+        }
+        AppState.lastError.observe(viewLifecycleOwner) { err ->
+            binding.lastErrorValue.text = err ?: "—"
+        }
+    }
+
+    private fun updateConnectionLabel(connected: Boolean?, registered: Boolean?) {
+        binding.connectionStatusValue.text = when {
+            connected == true && registered == true -> "🟢 متصل ومسجل"
+            connected == true && registered != true -> "🟡 متصل — غير مسجل"
+            else -> "🔴 غير متصل"
         }
     }
 
@@ -69,6 +84,27 @@ class SettingsFragment : Fragment() {
         SmsMonitorService.start(requireContext())
     }
 
+    private fun forceRegister() {
+        val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0)
+        val url = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)?.trim()
+        val secret = prefs.getString(MainActivity.KEY_SECRET, null)?.trim()
+        if (url.isNullOrEmpty() || secret.isNullOrEmpty()) {
+            Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.registerButton.isEnabled = false
+        binding.testResultText.text = "جاري التسجيل…"
+        val hb = HeartbeatManager(requireContext(), url, secret,
+            onStatusChange = { _, _ -> },
+            onPendingTasks = { _ -> }
+        )
+        hb.registerDevice()
+        activity?.runOnUiThread {
+            binding.registerButton.isEnabled = true
+            binding.testResultText.text = "⏳ تم إرسال طلب التسجيل — تحقق من حالة الاتصال"
+        }
+    }
+
     private fun testConnection() {
         val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0)
         val url = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)?.trim()
@@ -85,7 +121,7 @@ class SettingsFragment : Fragment() {
             "device_id" to HeartbeatManager.getDeviceId(requireContext()),
             "device_model" to (Build.MODEL ?: "Unknown"),
             "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
-            "app_version" to "1.0.4",
+            "app_version" to "1.0.5",
             "sent_at" to java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.getDefault())
                 .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(sentAt))
         )

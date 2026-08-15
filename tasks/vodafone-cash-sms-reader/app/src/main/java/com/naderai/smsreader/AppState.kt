@@ -3,13 +3,16 @@ package com.naderai.smsreader
 import androidx.lifecycle.MutableLiveData
 
 /**
- * Singleton observable state for the whole app — shared between fragments.
+ * Singleton observable state — shared between all fragments.
  */
 object AppState {
-    // Connection
+    // Connection & registration
     val isConnected = MutableLiveData(false)
+    val isRegistered = MutableLiveData<Boolean?>(null)
     val connectionMessage = MutableLiveData("في انتظار الإعدادات...")
+    val registrationMessage = MutableLiveData("")
     val lastSyncTime = MutableLiveData<Long?>(null)
+    val lastError = MutableLiveData<String?>(null)
 
     // Stats
     val pendingCount = MutableLiveData(0)
@@ -27,10 +30,37 @@ object AppState {
     // Pending tasks from heartbeat
     val pendingTasks = MutableLiveData<List<TaskScanner.Task>>(emptyList())
 
+    // Notifications
+    val notifications = MutableLiveData<List<DeviceNotification>>(emptyList())
+    val unreadNotificationCount = MutableLiveData(0)
+
     fun updateFromHeartbeat(connected: Boolean, message: String) {
         isConnected.postValue(connected)
         connectionMessage.postValue(message)
         if (connected) lastSyncTime.postValue(System.currentTimeMillis())
+        if (!connected) lastError.postValue(message)
+    }
+
+    fun updateRegistrationStatus(registered: Boolean, message: String) {
+        isRegistered.postValue(registered)
+        registrationMessage.postValue(message)
+        if (!registered) lastError.postValue(message)
+    }
+
+    fun addNotification(notification: DeviceNotification) {
+        val current = notifications.value?.toMutableList() ?: mutableListOf()
+        current.add(0, notification)
+        // Keep max 100
+        if (current.size > 100) current.removeAt(current.size - 1)
+        notifications.postValue(current)
+        val unread = current.count { !it.isRead }
+        unreadNotificationCount.postValue(unread)
+    }
+
+    fun markAllNotificationsRead() {
+        val updated = notifications.value?.map { it.copy(isRead = true) } ?: emptyList()
+        notifications.postValue(updated)
+        unreadNotificationCount.postValue(0)
     }
 
     fun onTaskResult(task: TaskScanner.Task, result: TaskScanner.ScanResult) {
@@ -39,20 +69,43 @@ object AppState {
             is TaskScanner.ScanResult.Success -> {
                 confirmedCount.postValue((confirmedCount.value ?: 0) + 1)
                 lastFoundTransaction.postValue(result.message.transactionId)
-                // Update order status in list
                 updateOrderStatus(task.requestId, OrderStatus.CONFIRMED)
+                addNotification(DeviceNotification(
+                    title = "تم العثور على العملية ✓",
+                    message = "المبلغ: ${result.message.amount} — رقم العملية: ${result.message.transactionId ?: "—"}",
+                    type = NotificationType.ORDER_CONFIRMED,
+                    referenceId = task.requestId
+                ))
             }
             is TaskScanner.ScanResult.NotFound -> {
                 notFoundCount.postValue((notFoundCount.value ?: 0) + 1)
                 updateOrderStatus(task.requestId, OrderStatus.NOT_FOUND)
+                addNotification(DeviceNotification(
+                    title = "لم يتم العثور على العملية",
+                    message = result.reason,
+                    type = NotificationType.ORDER_NOT_FOUND,
+                    referenceId = task.requestId
+                ))
             }
             is TaskScanner.ScanResult.AmountMismatch -> {
                 failedCount.postValue((failedCount.value ?: 0) + 1)
                 updateOrderStatus(task.requestId, OrderStatus.AMOUNT_MISMATCH)
+                addNotification(DeviceNotification(
+                    title = "مبلغ غير مطابق",
+                    message = "المطلوب: ${result.expectedAmount} — الموجود: ${result.foundAmount}",
+                    type = NotificationType.ORDER_MISMATCH,
+                    referenceId = task.requestId
+                ))
             }
             is TaskScanner.ScanResult.Failure -> {
                 failedCount.postValue((failedCount.value ?: 0) + 1)
                 updateOrderStatus(task.requestId, OrderStatus.FAILED)
+                addNotification(DeviceNotification(
+                    title = "فشل الفحص",
+                    message = result.reason,
+                    type = NotificationType.ERROR,
+                    referenceId = task.requestId
+                ))
             }
         }
     }
@@ -75,6 +128,20 @@ object AppState {
     }
 }
 
+// ── Notification model ────────────────────────────────────────────────────
+enum class NotificationType { CONNECTED, ERROR, ORDER_NEW, ORDER_CONFIRMED, ORDER_NOT_FOUND, ORDER_MISMATCH, TEST_SUCCESS, TEST_RECEIVED, SERVER_DOWN }
+
+data class DeviceNotification(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val message: String,
+    val type: NotificationType,
+    val referenceId: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
+    val isRead: Boolean = false
+)
+
+// ── Order status ──────────────────────────────────────────────────────────
 enum class OrderStatus(val label: String, val color: String) {
     PENDING("قيد المراجعة", "#F59E0B"),
     SCANNING("جاري البحث", "#3B82F6"),

@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Smartphone, RefreshCw, Wifi, WifiOff, Clock, Trash2, Cpu, Hash,
   Phone, Activity, TestTube2, Timer, Layers, CheckCircle2, XCircle,
+  ChevronDown, ChevronUp, GitCommitHorizontal,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { supabase } from '@/db/supabase';
 import { toast } from 'sonner';
@@ -18,6 +20,8 @@ export default function AdminSmsDevicesPage() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; ms?: number; at?: string }>>({});
+  const [timelineDevice, setTimelineDevice] = useState<SmsDevice | null>(null);
+  const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const load = useCallback(async () => {
@@ -87,18 +91,18 @@ export default function AdminSmsDevicesPage() {
   const sendTestToDevice = async (device: SmsDevice) => {
     if (testing) return;
     setTesting(device.device_id);
-    const sentAt = Date.now();
     try {
-      // We push a test_ping via an upsert — the device will see it on next heartbeat
-      // Meanwhile update last_test_at on the server record
-      const { error } = await supabase.from('sms_device_status').update({
-        last_test_at: new Date().toISOString(),
-        last_test_result: 'pending',
-      }).eq('device_id', device.device_id);
+      // Insert a real device_command row — Android picks it up on next heartbeat via get_pending_device_commands
+      const { error } = await supabase.from('device_commands').insert({
+        device_id: device.device_id,
+        command_type: 'test_server_to_android',
+        status: 'pending',
+        sent_at: new Date().toISOString(),
+        timeout_at: new Date(Date.now() + 120_000).toISOString(),
+      });
       if (error) throw error;
-      const elapsed = Date.now() - sentAt;
-      setTestResults((prev) => ({ ...prev, [device.device_id]: { ok: true, ms: elapsed, at: new Date().toISOString() } }));
-      toast.success(`✓ تم إرسال طلب الاختبار للجهاز (${elapsed}ms)`);
+      toast.success(`✓ تم إرسال أمر الاختبار — سيظهر رد الجهاز تلقائياً`);
+      setTestResults((prev) => ({ ...prev, [device.device_id]: { ok: true, ms: undefined, at: new Date().toISOString() } }));
     } catch (err: any) {
       setTestResults((prev) => ({ ...prev, [device.device_id]: { ok: false } }));
       toast.error(err?.message || 'فشل إرسال الاختبار');
@@ -116,6 +120,40 @@ export default function AdminSmsDevicesPage() {
     tasks.filter((t) => t.device_id === deviceId);
 
   const onlineCount = devices.filter(isOnline).length;
+
+  // ── Timeline dialog ──────────────────────────────────────────────────────
+  function DeviceTimeline({ device }: { device: SmsDevice }) {
+    const d = device as any;
+    const steps = [
+      { label: 'تم التسجيل', ts: device.created_at, done: !!device.created_at },
+      { label: 'آخر نبضة (Heartbeat)', ts: device.last_heartbeat_at, done: !!device.last_heartbeat_at },
+      { label: 'آخر اختبار', ts: d.last_test_at, done: !!d.last_test_at },
+      { label: 'آخر طلب شحن', ts: d.last_order_processed_at, done: !!d.last_order_processed_at },
+      { label: 'آخر SMS مُكتشف', ts: d.last_sms_at, done: !!d.last_sms_at },
+    ];
+    return (
+      <div className="space-y-3 py-2">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-start gap-3">
+            <div className="flex flex-col items-center shrink-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${step.done ? 'bg-primary/10 border-primary' : 'bg-muted border-border'}`}>
+                <GitCommitHorizontal className={`w-3.5 h-3.5 ${step.done ? 'text-primary' : 'text-muted-foreground'}`} />
+              </div>
+              {i < steps.length - 1 && <div className={`w-0.5 h-6 mt-1 ${step.done ? 'bg-primary/30' : 'bg-border'}`} />}
+            </div>
+            <div className="pt-1 min-w-0">
+              <p className={`text-sm font-medium ${step.done ? 'text-foreground' : 'text-muted-foreground'}`}>{step.label}</p>
+              {step.ts ? (
+                <p className="text-xs text-muted-foreground">{new Date(step.ts).toLocaleString('ar-EG')}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground/50 italic">لم يحدث بعد</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -168,7 +206,7 @@ export default function AdminSmsDevicesPage() {
               <div className="p-8 text-center space-y-3">
                 <Smartphone className="w-10 h-10 text-muted-foreground mx-auto opacity-50" />
                 <p className="text-sm text-muted-foreground">
-                  لا توجد أجهزة مسجلة. افتح تطبيق Android واضغط حفظ الإعدادات.
+                  لا توجد أجهزة مسجلة. افتح تطبيق Android واضغط "تسجيل الجهاز".
                 </p>
               </div>
             ) : (
@@ -177,6 +215,7 @@ export default function AdminSmsDevicesPage() {
                   const online = isOnline(device);
                   const pending = pendingForDevice(device.device_id);
                   const testResult = testResults[device.device_id];
+                  const expanded = expandedDevice === device.device_id;
                   return (
                     <div key={device.id} className="p-4 space-y-3">
                       {/* Status row */}
@@ -252,7 +291,6 @@ export default function AdminSmsDevicesPage() {
                             )}
                           </div>
 
-                          {/* Response time */}
                           {(device as any).response_time_ms && (
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Timer className="w-3 h-3" />
@@ -275,6 +313,14 @@ export default function AdminSmsDevicesPage() {
                             اختبار
                           </Button>
                           <Button
+                            variant="outline" size="sm"
+                            className="gap-1 text-xs"
+                            onClick={() => setTimelineDevice(device)}
+                          >
+                            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            Timeline
+                          </Button>
+                          <Button
                             variant="ghost" size="sm"
                             className="text-destructive hover:text-destructive text-xs gap-1"
                             onClick={() => deleteDevice(device.id)}
@@ -288,7 +334,7 @@ export default function AdminSmsDevicesPage() {
                       {testResult && (
                         <div className={`text-xs px-3 py-2 rounded-md flex items-center gap-2 ${testResult.ok ? 'bg-green-500/10 text-green-600' : 'bg-destructive/10 text-destructive'}`}>
                           {testResult.ok
-                            ? <><CheckCircle2 className="w-3.5 h-3.5" /> تم إرسال الاختبار {testResult.ms ? `(${testResult.ms}ms)` : ''}</>
+                            ? <><CheckCircle2 className="w-3.5 h-3.5" /> تم إرسال أمر الاختبار — سيرد الجهاز تلقائياً {testResult.ms ? `(${testResult.ms}ms)` : ''}</>
                             : <><XCircle className="w-3.5 h-3.5" /> فشل الاختبار</>}
                         </div>
                       )}
@@ -323,6 +369,19 @@ export default function AdminSmsDevicesPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Device Timeline Dialog */}
+        <Dialog open={!!timelineDevice} onOpenChange={(o) => { if (!o) setTimelineDevice(null); }}>
+          <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <GitCommitHorizontal className="w-4 h-4 text-primary" />
+                Timeline — {timelineDevice?.device_model ?? timelineDevice?.device_id?.slice(0, 12)}
+              </DialogTitle>
+            </DialogHeader>
+            {timelineDevice && <DeviceTimeline device={timelineDevice} />}
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

@@ -15,6 +15,7 @@ class HeartbeatManager(
     private val handler = Handler(Looper.getMainLooper())
     private val deviceId: String get() = Companion.getDeviceId(context)
     private var wasConnected = false
+    private var registered = false
 
     companion object {
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
@@ -43,12 +44,53 @@ class HeartbeatManager(
     }
 
     fun start() {
-        sendHeartbeat()
+        // Always register first, then start heartbeat loop
+        registerDevice()
         handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
     }
 
     fun stop() {
         handler.removeCallbacks(heartbeatRunnable)
+    }
+
+    /** Explicit device_register call — separate from heartbeat */
+    fun registerDevice() {
+        val payload = mapOf(
+            "action" to "device_register",
+            "device_id" to deviceId,
+            "device_model" to (Build.MODEL ?: "Unknown"),
+            "device_name" to (Build.DEVICE ?: "Unknown"),
+            "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
+            "app_version" to "1.0.5",
+            "phone_number" to "",
+            "capabilities" to mapOf(
+                "sms_read" to true,
+                "sms_receive" to true,
+                "realtime_scan" to true
+            )
+        )
+        WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { success, message, responseBody ->
+            registered = success
+            if (success) {
+                android.util.Log.d("HeartbeatManager", "Device registered: $responseBody")
+                AppState.updateRegistrationStatus(true, "مسجل ✓")
+                AppState.addNotification(DeviceNotification(
+                    title = "تم التسجيل بنجاح",
+                    message = "الجهاز مسجل في السيرفر",
+                    type = NotificationType.CONNECTED
+                ))
+                // Immediately send first heartbeat after registration
+                sendHeartbeat()
+            } else {
+                AppState.updateRegistrationStatus(false, "فشل التسجيل: $message")
+                AppState.addNotification(DeviceNotification(
+                    title = "فشل التسجيل",
+                    message = message,
+                    type = NotificationType.ERROR
+                ))
+                android.util.Log.e("HeartbeatManager", "DEVICE_REGISTRATION_FAILED: $message")
+            }
+        }
     }
 
     private fun sendHeartbeat() {
@@ -58,7 +100,7 @@ class HeartbeatManager(
             "device_model" to (Build.MODEL ?: "Unknown"),
             "device_name" to (Build.DEVICE ?: "Unknown"),
             "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
-            "app_version" to "1.0.4",
+            "app_version" to "1.0.5",
             "phone_number" to "",
             "capabilities" to mapOf(
                 "sms_read" to true,
@@ -73,10 +115,20 @@ class HeartbeatManager(
             AppState.updateFromHeartbeat(success, if (success) "متصل بالسيرفر" else "غير متصل: $message")
             if (success) {
                 parseHeartbeatResponse(responseBody)
-                // On reconnect, drain any offline retry queue
                 if (justReconnected) {
+                    AppState.addNotification(DeviceNotification(
+                        title = "عادت الاتصال",
+                        message = "تم استعادة الاتصال بالسيرفر",
+                        type = NotificationType.CONNECTED
+                    ))
                     RetryQueue.drainOnReconnect(context, webhookUrl, secret)
                 }
+            } else {
+                AppState.addNotification(DeviceNotification(
+                    title = "انقطع الاتصال",
+                    message = "REALTIME_SUBSCRIPTION_FAILED: $message",
+                    type = NotificationType.ERROR
+                ))
             }
         }
     }
@@ -84,12 +136,26 @@ class HeartbeatManager(
     fun parseHeartbeatResponse(responseBody: String) {
         try {
             val json = org.json.JSONObject(responseBody)
-            if (!json.has("pending_tasks")) return
-            val arr = json.getJSONArray("pending_tasks")
+
+            // Handle commands from server (server→android test flow)
+            if (json.has("commands")) {
+                val cmds = json.getJSONArray("commands")
+                for (i in 0 until cmds.length()) {
+                    val cmd = cmds.getJSONObject(i)
+                    handleServerCommand(cmd)
+                }
+            }
+
+            // Handle pending tasks
+            val tasksArr = when {
+                json.has("pending_tasks") -> json.getJSONArray("pending_tasks")
+                json.has("tasks") -> json.getJSONArray("tasks")
+                else -> return
+            }
             val tasks = mutableListOf<TaskScanner.Task>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                tasks.add(TaskScanner.Task(
+            for (i in 0 until tasksArr.length()) {
+                val obj = tasksArr.getJSONObject(i)
+                val task = TaskScanner.Task(
                     taskId = obj.getString("task_id"),
                     requestId = obj.getString("request_id"),
                     amountRequested = obj.optDouble("amount_requested", 0.0),
@@ -97,20 +163,65 @@ class HeartbeatManager(
                     senderNameRequested = obj.optString("sender_name_requested").takeIf { it.isNotEmpty() },
                     fingerprintAmount = if (obj.has("fingerprint_amount")) obj.optDouble("fingerprint_amount") else null,
                     creditsAmount = if (obj.has("credits_amount")) obj.optDouble("credits_amount") else null
-                ))
-                // Add order to AppState for UI tracking
+                )
+                tasks.add(task)
                 AppState.addOrUpdateOrder(OrderItem(
                     requestId = obj.getString("request_id"),
                     orderLabel = "طلب شحن",
                     expectedAmount = obj.optDouble("amount_requested", 0.0),
-                    status = OrderStatus.SCANNING,
+                    status = OrderStatus.PENDING,
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
                 ))
+                // Notify about new order
+                AppState.addNotification(DeviceNotification(
+                    title = "طلب شحن جديد",
+                    message = "مبلغ ${obj.optDouble("amount_requested", 0.0)} جنيه — جاري البحث",
+                    type = NotificationType.ORDER_NEW,
+                    referenceId = obj.getString("request_id")
+                ))
             }
-            onPendingTasks(tasks)
+            if (tasks.isNotEmpty()) onPendingTasks(tasks)
         } catch (e: Exception) {
-            android.util.Log.d("HeartbeatManager", "Failed to parse pending tasks: ${e.message}")
+            android.util.Log.e("HeartbeatManager", "Failed to parse heartbeat response: ${e.message}")
+        }
+    }
+
+    /** Handle a server→android command received in heartbeat */
+    private fun handleServerCommand(cmd: org.json.JSONObject) {
+        val commandId = cmd.optString("command_id")
+        val commandType = cmd.optString("command_type", "test_ping")
+        android.util.Log.d("HeartbeatManager", "Server command received: $commandType ($commandId)")
+
+        AppState.addNotification(DeviceNotification(
+            title = "أمر من الأدمن",
+            message = "نوع: $commandType",
+            type = NotificationType.TEST_RECEIVED,
+            referenceId = commandId
+        ))
+
+        // ACK back to server
+        val sentAt = cmd.optString("sent_at")
+        val ackPayload = mapOf(
+            "action" to "command_ack",
+            "device_id" to deviceId,
+            "command_id" to commandId,
+            "sent_at" to sentAt,
+            "response_data" to mapOf(
+                "command_type" to commandType,
+                "device_model" to (Build.MODEL ?: "Unknown"),
+                "app_version" to "1.0.5"
+            )
+        )
+        WebhookSender.sendJsonWithBody(webhookUrl, secret, ackPayload) { success, _, _ ->
+            if (success) {
+                AppState.addNotification(DeviceNotification(
+                    title = "تم الرد على الأدمن ✓",
+                    message = "اختبار الاتصال ناجح",
+                    type = NotificationType.TEST_SUCCESS,
+                    referenceId = commandId
+                ))
+            }
         }
     }
 }

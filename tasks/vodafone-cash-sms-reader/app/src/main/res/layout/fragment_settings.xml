@@ -82,11 +82,19 @@
                     android:text="اختبار الاتصال" android:textSize="14sp" android:textStyle="bold"
                     android:layout_marginBottom="10dp"/>
 
+                <!-- Register button (new) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/registerButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="تسجيل الجهاز (device_register)"
+                    android:layout_marginBottom="8dp" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/testConnectionButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="إرسال اختبار للسيرفر"
+                    android:text="إرسال test_ping للسيرفر"
                     style="@style/Widget.Material3.Button.OutlinedButton" />
 
                 <TextView
@@ -137,6 +145,16 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:orientation="horizontal" android:layout_marginBottom="5dp">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="آخر خطأ:" android:textSize="12sp" android:alpha="0.6"/>
+                    <TextView android:id="@+id/lastErrorValue" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="—" android:textSize="12sp"
+                        android:maxWidth="200dp" android:ellipsize="end" android:maxLines="2"
+                        android:textColor="#EF4444"/>
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:layout_marginBottom="5dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:text="المعرّف:" android:textSize="12sp" android:alpha="0.6"/>
                     <TextView android:id="@+id/deviceIdValue" android:layout_width="wrap_content"
                         android:layout_height="wrap_content" android:text="—" android:textSize="12sp" android:fontFamily="monospace"/>
@@ -163,7 +181,7 @@
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:text="التطبيق:" android:textSize="12sp" android:alpha="0.6"/>
                     <TextView android:id="@+id/appVersionValue" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:text="1.0.4" android:textSize="12sp"/>
+                        android:layout_height="wrap_content" android:text="1.0.5" android:textSize="12sp"/>
                 </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>

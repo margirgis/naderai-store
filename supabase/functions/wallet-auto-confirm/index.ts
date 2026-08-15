@@ -1,8 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { handleCors, jsonResponse, errorResponse } from '../_shared/cors.ts';
 
-// ── Wallet-Auto-Confirm v2 ──────────────────────────────────────────────────
-// Handles: heartbeat | task_result | test_ping | legacy SMS webhook
+// ── Wallet-Auto-Confirm v3 ──────────────────────────────────────────────────
+// Handles: device_register | heartbeat | task_result | test_ping | command_ack | legacy SMS webhook
 
 interface SmsPayload {
   sender_phone?: string;
@@ -114,6 +114,27 @@ interface TestPingPayload {
   [key: string]: unknown;
 }
 
+interface DeviceRegisterPayload {
+  action: 'device_register';
+  device_id: string;
+  device_model?: string;
+  device_name?: string;
+  android_version?: string;
+  app_version?: string;
+  phone_number?: string;
+  capabilities?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface CommandAckPayload {
+  action: 'command_ack';
+  device_id: string;
+  command_id: string;
+  response_data?: Record<string, unknown>;
+  sent_at?: string;
+  [key: string]: unknown;
+}
+
 function isHeartbeat(payload: Record<string, unknown>): payload is HeartbeatPayload {
   return payload.action === 'heartbeat' && typeof payload.device_id === 'string';
 }
@@ -124,6 +145,14 @@ function isTaskResult(payload: Record<string, unknown>): payload is TaskResultPa
 
 function isTestPing(payload: Record<string, unknown>): payload is TestPingPayload {
   return payload.action === 'test_ping' && typeof payload.device_id === 'string';
+}
+
+function isDeviceRegister(payload: Record<string, unknown>): payload is DeviceRegisterPayload {
+  return payload.action === 'device_register' && typeof payload.device_id === 'string';
+}
+
+function isCommandAck(payload: Record<string, unknown>): payload is CommandAckPayload {
+  return payload.action === 'command_ack' && typeof payload.device_id === 'string' && typeof payload.command_id === 'string';
 }
 
 Deno.serve(async (req: Request) => {
@@ -149,6 +178,39 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Invalid JSON', 400);
   }
 
+  // ── Device Register ───────────────────────────────────────────────────────
+  if (isDeviceRegister(payload)) {
+    const { data, error } = await db.rpc('register_device', {
+      p_device_id: payload.device_id,
+      p_device_model: payload.device_model ?? null,
+      p_device_name: payload.device_name ?? null,
+      p_android_version: payload.android_version ?? null,
+      p_app_version: payload.app_version ?? null,
+      p_phone_number: payload.phone_number ?? null,
+      p_capabilities: payload.capabilities ?? {},
+    });
+    if (error) return errorResponse(`DEVICE_REGISTRATION_FAILED: ${error.message}`, 500);
+    return jsonResponse({ ok: true, action: 'device_register', ...data });
+  }
+
+  // ── Command Ack ───────────────────────────────────────────────────────────
+  if (isCommandAck(payload)) {
+    const sentAt = payload.sent_at ? new Date(payload.sent_at as string).getTime() : null;
+    const responseTimeMs = sentAt ? Date.now() - sentAt : null;
+    const responseData = {
+      ...(payload.response_data ?? {}),
+      response_time_ms: responseTimeMs,
+      acked_at: new Date().toISOString(),
+    };
+    const { error } = await db.rpc('ack_device_command', {
+      p_command_id: payload.command_id,
+      p_device_id: payload.device_id,
+      p_response_data: responseData,
+    });
+    if (error) return errorResponse(`COMMAND_ACK_FAILED: ${error.message}`, 500);
+    return jsonResponse({ ok: true, action: 'command_ack', response_time_ms: responseTimeMs });
+  }
+
   // ── Test Ping ────────────────────────────────────────────────────────────
   if (isTestPing(payload)) {
     const receivedAt = new Date().toISOString();
@@ -167,6 +229,15 @@ Deno.serve(async (req: Request) => {
       status: 'online',
       is_active: true,
     }, { onConflict: 'device_id' });
+
+    // Notify admin
+    await db.rpc('create_admin_notification', {
+      p_title: 'اختبار اتصال ناجح من Android ✓',
+      p_message: `الجهاز ${(payload.device_model as string ?? payload.device_id)} متصل — زمن الاستجابة: ${responseTimeMs ?? '?'}ms`,
+      p_event_type: 'test_ping_success',
+      p_reference_id: payload.device_id,
+      p_device_id: payload.device_id,
+    });
 
     return jsonResponse({
       ok: true,
@@ -192,21 +263,37 @@ Deno.serve(async (req: Request) => {
       is_active: true,
     }, { onConflict: 'device_id' });
 
-    const { data: tasks } = await db.rpc('get_device_pending_tasks', {
+    const { data: result } = await db.rpc('get_device_pending_tasks', {
       p_device_id: payload.device_id,
     });
+
+    // result is now {tasks: [...], commands: [...]}
+    const tasks = (result as any)?.tasks ?? [];
+    const commands = (result as any)?.commands ?? [];
+
+    // Notify admin on first heartbeat if device just registered
+    if (tasks.length > 0) {
+      await db.rpc('create_admin_notification', {
+        p_title: `${tasks.length} طلب جديد للجهاز`,
+        p_message: `الجهاز ${payload.device_id.slice(0,12)} لديه ${tasks.length} مهمة`,
+        p_event_type: 'order_dispatched',
+        p_reference_id: payload.device_id,
+        p_device_id: payload.device_id,
+      });
+    }
 
     return jsonResponse({
       ok: true,
       action: 'heartbeat',
       status: 'online',
-      pending_tasks: tasks ?? [],
+      pending_tasks: tasks,
+      commands,
     });
   }
 
   // ── Task Result ───────────────────────────────────────────────────────────
   if (isTaskResult(payload)) {
-    // Idempotency: check if this task_id was already completed (via idempotency_key)
+    // Idempotency: check if this task_id was already completed
     if (payload.idempotency_key) {
       const { data: existing } = await db
         .from('pending_tasks')
@@ -223,7 +310,24 @@ Deno.serve(async (req: Request) => {
       p_result_data: payload.result_data ?? null,
       p_failure_reason: payload.failure_reason ?? null,
     });
-    if (error) return errorResponse(error.message, 500);
+    if (error) return errorResponse(`ORDER_DELIVERY_FAILED: ${error.message}`, 500);
+
+    // Notify admin of scan result
+    const statusLabels: Record<string, string> = {
+      success: 'تم العثور على العملية ✓',
+      not_found: 'لم يتم العثور',
+      failure: 'فشل الفحص',
+      amount_mismatch: 'مبلغ غير مطابق',
+      duplicate: 'عملية مكررة',
+    };
+    await db.rpc('create_admin_notification', {
+      p_title: statusLabels[payload.status] ?? `نتيجة الفحص: ${payload.status}`,
+      p_message: `المهمة ${payload.task_id.slice(0,8)} — ${payload.failure_reason ?? (payload.result_data as any)?.transaction_id ?? ''}`,
+      p_event_type: `scan_${payload.status}`,
+      p_reference_id: payload.task_id,
+      p_device_id: payload.device_id,
+    });
+
     return jsonResponse(data);
   }
 

@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { AdminNotificationBell } from '@/components/admin/AdminNotificationBell';
 
 const navItems = [
   { label: 'لوحة التحكم', path: '/', icon: LayoutDashboard },
@@ -130,10 +131,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <Shield className="w-4 h-4 text-primary shrink-0" />
             <span className="text-sm font-semibold truncate">Nader AI — لوحة الإدارة</span>
           </div>
+          <AdminNotificationBell />
+        </header>
+
+        {/* Desktop top bar (notification bell only) */}
+        <header className="hidden md:flex items-center justify-end px-6 py-2 border-b border-border/50">
+          <AdminNotificationBell />
         </header>
 
         <main className="flex-1 overflow-y-auto">

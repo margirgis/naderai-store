@@ -8,6 +8,7 @@ class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activi
 
     private val pages: List<Pair<String, Fragment>> = listOf(
         "الرئيسية" to HomeFragment(),
+        "الإشعارات" to NotificationsFragment(),
         "الكل" to OrdersFragment.newInstance(null),
         "قيد المراجعة" to OrdersFragment.newInstance(OrderStatus.PENDING),
         "جاري البحث" to OrdersFragment.newInstance(OrderStatus.SCANNING),
@@ -16,6 +17,7 @@ class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activi
         "غير مطابق" to OrdersFragment.newInstance(OrderStatus.AMOUNT_MISMATCH),
         "لم يوجد" to OrdersFragment.newInstance(OrderStatus.NOT_FOUND),
         "فشل" to OrdersFragment.newInstance(OrderStatus.FAILED),
+        "تشخيص" to DiagnosticsFragment(),
         "الإعدادات" to SettingsFragment()
     )
 
