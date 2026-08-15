@@ -12,9 +12,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: MainPagerAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Catch-all to prevent crash loops and let the user see diagnostics
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("GlobalException", "Crash on ${thread.name}", throwable)
+            AppState.lastError.postValue("تعطل: ${throwable.message}")
+        }
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to inflate main activity", e)
+            AppState.lastError.postValue("فشل فتح التطبيق: ${e.message}")
+            // Show a simple fallback instead of crashing
+            val tv = android.widget.TextView(this)
+            tv.text = "تعذر فتح التطبيق. يرجى إعادة التثبيت أو مراجعة الإعدادات.\n\n${e.message}"
+            tv.setPadding(32, 32, 32, 32)
+            setContentView(tv)
+            return
+        }
 
         if (!PermissionsHelper.allPermissionsGranted(this)) {
             startActivity(Intent(this, PermissionsActivity::class.java))
@@ -44,10 +60,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startServiceIfConfigured() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val hasConfig = !prefs.getString(KEY_WEBHOOK_URL, null).isNullOrEmpty() &&
-                !prefs.getString(KEY_SECRET, null).isNullOrEmpty()
-        if (hasConfig) SmsMonitorService.start(this)
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            val hasConfig = !prefs.getString(KEY_WEBHOOK_URL, null).isNullOrEmpty() &&
+                    !prefs.getString(KEY_SECRET, null).isNullOrEmpty()
+            if (hasConfig) SmsMonitorService.start(this)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to start service", e)
+            AppState.lastError.postValue("فشل تشغيل الخدمة: ${e.message}")
+        }
     }
 
     /** الرابط الكامل لـ Edge Function من رابط Supabase الاساسي */

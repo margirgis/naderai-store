@@ -39,8 +39,10 @@ export default function OrderFormPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  // Server-side idempotency key — generated once per page mount
-  const idempotencyKey = useRef<string>(`ik_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  const [replayedOrderId, setReplayedOrderId] = useState<string | null>(null);
+  // Server-side idempotency key — regenerated per form load; user can reset to force new order
+  const generateKey = () => `ik_${Date.now()}_${Math.random().toString(36).slice(2)}_${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(generateKey());
   const submittedRef = useRef(false);
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function OrderFormPage() {
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke('create-order', {
-        body: { service_id: serviceId, quantity: 1, idempotency_key: idempotencyKey.current },
+        body: { service_id: serviceId, quantity: 1, idempotency_key: idempotencyKey },
       });
 
       if (error) {
@@ -94,8 +96,8 @@ export default function OrderFormPage() {
       if (!data?.success) {
         // Idempotent replay: existing order returned
         if (data?.order_id) {
-          toast.info('طلبك موجود مسبقاً. يتم تتبعه.');
-          navigate(`/store/orders/${data.order_id}`);
+          setReplayedOrderId(data.order_id);
+          toast.info('طلبك موجود مسبقاً. يمكنك تتبعه أو إنشاء طلب جديد.');
           return;
         }
         toast.error(data?.safe_message ?? 'تعذر إنشاء الطلب. حاول مرة أخرى.');
@@ -227,6 +229,38 @@ export default function OrderFormPage() {
                 : 'تأكيد الاشتراك'
               }
             </Button>
+
+            {/* Replay notice */}
+            {replayedOrderId && (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    يوجد طلب سابق بنفس البيانات. إذا كان قديماً أو فاشلاً، يمكنك إنشاء طلب جديد بدلاً من تتبعه.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="outline"
+                    className="w-full h-10 text-sm"
+                    onClick={() => navigate(`/store/orders/${replayedOrderId}`)}
+                  >
+                    تتبع الطلب السابق
+                  </Button>
+                  <Button
+                    className="w-full h-10 text-sm"
+                    onClick={() => {
+                      setReplayedOrderId(null);
+                      setIdempotencyKey(generateKey());
+                      submittedRef.current = false;
+                      toast.info('تم تجهيز طلب جديد. اضغط تأكيد الاشتراك.');
+                    }}
+                  >
+                    إنشاء طلب جديد
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
