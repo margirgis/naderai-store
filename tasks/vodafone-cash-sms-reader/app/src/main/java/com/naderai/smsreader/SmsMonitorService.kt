@@ -26,6 +26,16 @@ class SmsMonitorService : Service() {
         private const val CHANNEL_ID = "naderai_sms_monitor"
         private const val ACTION_STOP = "STOP_SERVICE"
 
+        @JvmStatic
+        fun start(context: Context) {
+            val intent = Intent(context, SmsMonitorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
         /** استدعاء عند استلام رسالة جديدة لفحص الطلبات المعلقة مرة واحدة */
         @JvmStatic
         fun onNewSmsReceived(context: Context) {
