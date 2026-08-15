@@ -29,6 +29,10 @@ class HomeFragment : Fragment() {
         binding.btnOpenTestSms.setOnClickListener {
             startActivity(android.content.Intent(requireContext(), TestSmsActivity::class.java))
         }
+
+        binding.btnOpenDiagnostics.setOnClickListener {
+            startActivity(android.content.Intent(requireContext(), DiagnosticsActivity::class.java))
+        }
     }
 
     private fun showDeviceInfo() {

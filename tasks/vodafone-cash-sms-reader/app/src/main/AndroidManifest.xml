@@ -52,6 +52,11 @@
             android:exported="false"
             android:label="تجربة فحص الرسالة" />
 
+        <activity
+            android:name=".DiagnosticsActivity"
+            android:exported="false"
+            android:label="تشخيصات النظام" />
+
         <!-- Foreground service that keeps heartbeat alive in background -->
         <service
             android:name=".SmsMonitorService"

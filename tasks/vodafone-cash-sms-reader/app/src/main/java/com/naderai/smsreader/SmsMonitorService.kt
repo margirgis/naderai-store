@@ -27,6 +27,9 @@ class SmsMonitorService : Service() {
         private const val ACTION_STOP = "STOP_SERVICE"
 
         @JvmStatic
+        var isRunning = false
+
+        @JvmStatic
         fun start(context: Context) {
             val intent = Intent(context, SmsMonitorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -138,6 +141,7 @@ class SmsMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("جاري الاتصال..."))
         acquireWakeLock()
@@ -203,6 +207,7 @@ class SmsMonitorService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         heartbeatManager?.stop()
         heartbeatManager = null
         wakeLock?.release()

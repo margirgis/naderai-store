@@ -34,6 +34,15 @@ object AppState {
     val notifications = MutableLiveData<List<DeviceNotification>>(emptyList())
     val unreadNotificationCount = MutableLiveData(0)
 
+    // Helper accessors for diagnostics
+    fun getOrders(): List<OrderItem> = orders.value ?: emptyList()
+    fun getNotifications(): List<DeviceNotification> = notifications.value ?: emptyList()
+    fun getConnectionStatus(): String = when {
+        isConnected.value == true && isRegistered.value == true -> "✅ متصل ومسجل"
+        isConnected.value == true -> "🟡 متصل لكن غير مسجل"
+        else -> "❌ غير متصل: ${connectionMessage.value ?: "—"}"
+    }
+
     // مجموعة لمنع تكرار إشعارات الطلبات
     private val notifiedTaskIds = mutableSetOf<String>()
     // تتبع آخر إشعار اتصال/خطأ لمنع التكرار

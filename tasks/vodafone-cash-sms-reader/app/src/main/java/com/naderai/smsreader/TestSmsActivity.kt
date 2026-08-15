@@ -35,7 +35,8 @@ class TestSmsActivity : AppCompatActivity() {
         binding.btnPaste.setOnClickListener { pasteFromClipboard() }
         binding.btnSample.setOnClickListener { loadSample() }
         binding.btnScan.setOnClickListener { scanMessage() }
-        binding.btnScanInbox.setOnClickListener { scanRealInbox() }
+        binding.btnScanInbox.setOnClickListener { searchForPastedMessage() }
+        binding.btnListAll.setOnClickListener { listAllOfficialMessages() }
     }
 
     private fun pasteFromClipboard() {
@@ -95,13 +96,55 @@ class TestSmsActivity : AppCompatActivity() {
         }
     }
 
-    private fun scanRealInbox() {
+    private fun searchForPastedMessage() {
+        val text = binding.smsInput.text?.toString()?.trim() ?: ""
+        if (text.isEmpty()) {
+            Toast.makeText(this, "الصق رسالة أولاً عشان تبحث عنها في الجهاز", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "مفيش إذن قراءة الرسائل — اديه من إعدادات الصلاحيات", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val target = TaskScanner.testParseSms(text)
+        if (target.amount == null || target.senderPhone.isNullOrEmpty()) {
+            Toast.makeText(this, "الرسالة دي مش مستخرج منها مبلغ أو رقم محوّل", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        binding.inboxResultTitle.visibility = View.VISIBLE
+        binding.inboxResultTitle.text = "نتيجة البحث عن المبلغ ${target.amount} ورقم ${target.senderPhone}"
+        binding.inboxResultText.text = "⏳ بيبحث في صندوق الرسائل..."
+        binding.inboxResultText.visibility = View.VISIBLE
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val matches = TaskScanner.searchInboxForTest(this@TestSmsActivity, target)
+            val resultText = when {
+                matches.isEmpty() ->
+                    "❌ لم يتم العثور على رسالة مطابقة.\n\n" +
+                    "المبلغ المطلوب: ${target.amount}\n" +
+                    "الرقم المطلوب: ${target.senderPhone}\n\n" +
+                    "تأكد إن الرسالة موجودة في الجهاز وإن إذن قراءة الرسائل ممنوح."
+                else -> matches.mapIndexed { index, sms ->
+                    """${index + 1}. ✅ ${sms.body.take(80)}…
+المبلغ: ${sms.amount} | المحوّل: ${sms.senderPhone} | العملية: ${sms.transactionId ?: "—"} | التاريخ: ${formatDate(sms.date)}"""
+                }.joinToString("\n\n---\n\n")
+            }
+            withContext(Dispatchers.Main) {
+                binding.inboxResultText.text = resultText
+            }
+        }
+    }
+
+    private fun listAllOfficialMessages() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "مفيش إذن قراءة الرسائل — اديه من إعدادات الصلاحيات", Toast.LENGTH_LONG).show()
             return
         }
 
         binding.inboxResultTitle.visibility = View.VISIBLE
+        binding.inboxResultTitle.text = "كل رسائل فودافون كاش في الجهاز"
         binding.inboxResultText.text = "⏳ بيقرأ صندوق الرسائل..."
         binding.inboxResultText.visibility = View.VISIBLE
 
@@ -109,15 +152,20 @@ class TestSmsActivity : AppCompatActivity() {
             val messages = TaskScanner.scanInboxForTest(this@TestSmsActivity)
             val text = when {
                 messages.isEmpty() -> "📭 مفيش رسائل فودافون كاش في الجهاز.\n\nتأكد إن:\n• في رسالة واصلة من فودافون كاش.\n• تم منح إذن قراءة الرسائل."
-                else -> messages.take(5).mapIndexed { index, sms ->
+                else -> messages.take(10).mapIndexed { index, sms ->
                     val official = TaskScanner.isOfficialVodafoneCashMessage(sms.body)
                     """${index + 1}. ${if (official) "✅" else "⚠️"} ${sms.body.take(60)}…
-المبلغ: ${sms.amount ?: "—"} | المحوّل: ${sms.senderPhone ?: "—"} | العملية: ${sms.transactionId ?: "—"}"""
+المبلغ: ${sms.amount ?: "—"} | المحوّل: ${sms.senderPhone ?: "—"} | العملية: ${sms.transactionId ?: "—"} | التاريخ: ${formatDate(sms.date)}"""
                 }.joinToString("\n\n---\n\n")
             }
             withContext(Dispatchers.Main) {
                 binding.inboxResultText.text = text
             }
         }
+    }
+
+    private fun formatDate(date: Long): String {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+        return sdf.format(java.util.Date(date))
     }
 }

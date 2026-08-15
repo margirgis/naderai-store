@@ -314,6 +314,22 @@ object TaskScanner {
         return results
     }
 
+    /**
+     * البحث عن رسالة محددة في صندوق الرسائل — بيستخدم المبلغ والرقم والتاريخ.
+     * بيرجع قائمة بالرسائل المطابقة مرتبة حسب الأقرب للتاريخ.
+     */
+    fun searchInboxForTest(context: Context, target: ParsedSms): List<ParsedSms> {
+        val all = scanInboxForTest(context)
+        val targetPhone = normalizeEgyptianPhone(target.senderPhone ?: "")
+        val targetAmount = target.amount ?: 0.0
+        return all.filter { sms ->
+            val smsPhone = normalizeEgyptianPhone(sms.senderPhone ?: "")
+            val amountMatch = targetAmount > 0 && sms.amount != null && kotlin.math.abs(sms.amount - targetAmount) <= 0.01
+            val phoneMatch = targetPhone.isNotEmpty() && smsPhone == targetPhone
+            amountMatch && phoneMatch
+        }.sortedBy { kotlin.math.abs((it.date ?: 0) - target.date) }
+    }
+
     // Enhanced SMS parser — extracts transaction_id, receiver_wallet, sender_name
     /**
      * نسخة عامة من parseSmsBody للاختبار السريع دون قراءة صندوق الرسائل.

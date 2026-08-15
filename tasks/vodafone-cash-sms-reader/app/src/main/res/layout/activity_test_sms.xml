@@ -137,13 +137,21 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="📱 فحص رسائل الجهاز الحقيقية" />
+            android:text="🔎 ابحث عن الرسالة دي في الجهاز" />
+
+        <Button
+            android:id="@+id/btnListAll"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="📱 عرض كل رسائل فودافون كاش في الجهاز" />
 
         <TextView
             android:id="@+id/inboxResultTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="رسائل فودافون كاش في الجهاز"
+            android:text="نتيجة البحث في الجهاز"
             android:textSize="16sp"
             android:textStyle="bold"
             android:layout_marginTop="16dp"
@@ -167,8 +175,9 @@
 1. افتح رسائل فودافون كاش في الجهاز.
 2. انسخ الرسالة الكاملة (اضغط مطولاً ثم نسخ).
 3. ارجع للتطبيق والصقها في المربع فوق.
-4. اضغط 'افحص النص'.
-5. اضغط 'فحص رسائل الجهاز الحقيقية' للتأكد إن التطبيق بيقدر يقرأ الرسائل.
+4. اضغط 'افحص النص' للتأكد إن التطبيق بيستخرج البيانات صح.
+5. اضغط '🔎 ابحث عن الرسالة دي في الجهاز' للتأكد إن التطبيق بيلاقي نفس المبلغ والرقم في صندوق الرسائل الحقيقي.
+6. اضغط '📱 عرض كل رسائل فودافون كاش' لو عايز تشوف كل رسائل الاستلام الموجودة في الجهاز.
 
 لو ظهر '✅ تم التطابق' مع المبلغ ورقم المحفظة ورقم العملية — يبقى التطبيق بيقرأ الرسالة صح.
 لو ظهر '❌ لا توجد مطابقة' — ابعت الرسالة لي عشان أعدّل الـ Regex."
