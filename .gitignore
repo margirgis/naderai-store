@@ -43,3 +43,4 @@ history/*.json
 !.env.example
 .vite
 historical_context.txt
+/tasks
