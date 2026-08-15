@@ -110,7 +110,7 @@ object AppState {
         }
     }
 
-    private fun updateOrderStatus(requestId: String, status: OrderStatus) {
+    fun updateOrderStatus(requestId: String, status: OrderStatus) {
         val current = orders.value?.toMutableList() ?: return
         val idx = current.indexOfFirst { it.requestId == requestId }
         if (idx >= 0) {
@@ -174,5 +174,13 @@ data class OrderItem(
     val createdAt: Long,
     val updatedAt: Long,
     val failureReason: String? = null,
-    val transactionId: String? = null
+    val transactionId: String? = null,
+    // تفاصيل كاملة من الموقع
+    val orderNumber: Long? = null,
+    val creditsRequested: Int? = null,
+    val customerEmail: String? = null,
+    val customerPhone: String? = null,
+    val paymentMethod: String? = null,
+    // مرجع للمهمة للعمليات اليدوية
+    val taskId: String? = null
 )

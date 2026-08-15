@@ -15,6 +15,8 @@ import java.util.*
 object TaskScanner {
 
     private const val TAG = "TaskScanner"
+    private const val MAX_SCAN_ATTEMPTS = 3
+    private const val SCAN_INTERVAL_MS = 20_000L
 
     private val KEYWORDS = listOf(
         "فودافون كاش", "vodafone cash", "استلمت", "لقد استلمت",
@@ -28,7 +30,14 @@ object TaskScanner {
         val senderPhoneRequested: String?,
         val senderNameRequested: String?,
         val fingerprintAmount: Double?,
-        val creditsAmount: Double?
+        val creditsAmount: Double?,
+        // بيانات كاملة من الموقع
+        val orderNumber: Long?,
+        val creditsRequested: Int?,
+        val customerEmail: String?,
+        val customerPhone: String?,
+        val paymentMethod: String?,
+        val requestCreatedAt: String?
     )
 
     data class ParsedSms(
@@ -41,6 +50,10 @@ object TaskScanner {
         val receiverWallet: String? = null
     )
 
+    /**
+     * يفحص صندوق الرسائل كل 20 ثانية — حد أقصى 3 مرات (دقيقة واحدة).
+     * لو لقى تطابق يبعت النتيجة فوراً. لو انتهت المحاولات يبعت آخر نتيجة.
+     */
     fun scanAndReport(
         context: Context,
         task: Task,
@@ -49,9 +62,24 @@ object TaskScanner {
         onResult: ((ScanResult, Boolean) -> Unit)? = null
     ) {
         CoroutineScope(Dispatchers.IO).launch {
-            val result = scanInbox(context, task)
-            sendTaskResult(context, task, result, webhookUrl, secret) { success ->
-                onResult?.invoke(result, success)
+            var attempt = 0
+            var lastResult: ScanResult = ScanResult.NotFound("لم يبدأ الفحص")
+            while (attempt < MAX_SCAN_ATTEMPTS) {
+                attempt++
+                Log.d(TAG, "Scan attempt $attempt/${MAX_SCAN_ATTEMPTS} for task ${task.taskId}")
+                lastResult = scanInbox(context, task)
+                if (lastResult is ScanResult.Success) {
+                    // تطابق — نبعت النتيجة فوراً
+                    break
+                }
+                if (attempt < MAX_SCAN_ATTEMPTS) {
+                    // ننتظر 20 ثانية قبل المحاولة القادمة
+                    kotlinx.coroutines.delay(SCAN_INTERVAL_MS)
+                }
+            }
+            // بعد انتهاء المحاولات أو عند التطابق: نبعت النتيجة النهائية
+            sendTaskResult(context, task, lastResult, webhookUrl, secret) { success ->
+                onResult?.invoke(lastResult, success)
             }
         }
     }

@@ -163,7 +163,13 @@ class HeartbeatManager(
                     senderPhoneRequested = obj.optString("sender_phone_requested").takeIf { it.isNotEmpty() },
                     senderNameRequested = obj.optString("sender_name_requested").takeIf { it.isNotEmpty() },
                     fingerprintAmount = if (obj.has("fingerprint_amount")) obj.optDouble("fingerprint_amount") else null,
-                    creditsAmount = if (obj.has("credits_amount")) obj.optDouble("credits_amount") else null
+                    creditsAmount = if (obj.has("credits_amount")) obj.optDouble("credits_amount") else null,
+                    orderNumber = if (obj.has("order_number") && !obj.isNull("order_number")) obj.getLong("order_number") else null,
+                    creditsRequested = if (obj.has("credits_requested") && !obj.isNull("credits_requested")) obj.getInt("credits_requested") else null,
+                    customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
+                    customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
+                    paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
+                    requestCreatedAt = obj.optString("request_created_at").takeIf { it.isNotEmpty() }
                 )
                 tasks.add(task)
                 AppState.addOrUpdateOrder(OrderItem(
@@ -172,12 +178,22 @@ class HeartbeatManager(
                     expectedAmount = obj.optDouble("amount_requested", 0.0),
                     status = OrderStatus.PENDING,
                     createdAt = System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis()
+                    updatedAt = System.currentTimeMillis(),
+                    orderNumber = if (obj.has("order_number") && !obj.isNull("order_number")) obj.getLong("order_number") else null,
+                    creditsRequested = if (obj.has("credits_requested") && !obj.isNull("credits_requested")) obj.getInt("credits_requested") else null,
+                    customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
+                    customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
+                    paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
+                    taskId = obj.getString("task_id")
                 ))
                 // Notify about new order
+                val orderNum = if (obj.has("order_number") && !obj.isNull("order_number")) "#${obj.getLong("order_number")}" else "#${obj.getString("request_id").take(8)}"
+                val customerInfo = obj.optString("customer_phone").takeIf { it.isNotEmpty() }
+                    ?: obj.optString("customer_email").takeIf { it.isNotEmpty() }
+                    ?: "غير معروف"
                 AppState.addNotification(DeviceNotification(
-                    title = "طلب شحن جديد",
-                    message = "مبلغ ${obj.optDouble("amount_requested", 0.0)} جنيه — جاري البحث",
+                    title = "طلب شحن جديد $orderNum",
+                    message = "${obj.optDouble("amount_requested", 0.0)} جنيه • $customerInfo — جاري البحث",
                     type = NotificationType.ORDER_NEW,
                     referenceId = obj.getString("request_id")
                 ))
