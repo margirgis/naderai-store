@@ -50,15 +50,20 @@ export function AdminNotificationBell() {
     };
     load();
 
-    // Realtime subscription
+    // Realtime subscription — unique topic per mount avoids collision with any lingering channel
+    const channelName = `admin-notifications-bell-${crypto.randomUUID()}`;
     const channel = supabase
-      .channel('admin-notifications-bell')
+      .channel(channelName)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
         setNotifications((prev) => [payload.new as AdminNotification, ...prev].slice(0, 50));
       })
       .subscribe();
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      supabase.removeChannel(channel).catch(() => {});
+      channelRef.current = null;
+    };
   }, []);
 
   // Close on outside click
