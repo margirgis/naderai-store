@@ -58,7 +58,10 @@ object TaskScanner {
         val customerEmail: String?,
         val customerPhone: String?,
         val paymentMethod: String?,
-        val requestCreatedAt: String?
+        val requestCreatedAt: String?,
+        // بيانات payment_order الجديدة
+        val paymentOrderId: String?,
+        val orderExpiresAt: String?
     )
 
     data class ParsedSms(
@@ -234,22 +237,30 @@ object TaskScanner {
 
         if (result is ScanResult.Success) {
             val m = result.message
+            val smsDateIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.format(Date(m.date))
             body["result_data"] = mapOf(
-                "sender_phone" to (m.senderPhone ?: ""),
-                "sender_name" to (m.senderName ?: ""),
-                "amount" to (m.amount ?: 0.0),
-                "transaction_id" to (m.transactionId ?: ""),
-                "receiver_wallet" to (m.receiverWallet ?: ""),
-                "sms_body" to m.body,
-                "scanned_at" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                "sender_phone"     to (m.senderPhone ?: ""),
+                "sender_name"      to (m.senderName ?: ""),
+                "amount"           to (m.amount ?: 0.0),
+                "transaction_id"   to (m.transactionId ?: ""),
+                "transaction_time" to smsDateIso,
+                "receiver_wallet"  to (m.receiverWallet ?: ""),
+                "sms_body"         to m.body,
+                "scanned_at"       to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
                     timeZone = TimeZone.getTimeZone("UTC")
                 }.format(Date())
             )
         }
 
-        if (result is ScanResult.Failure) body["failure_reason"] = result.reason
-        if (result is ScanResult.NotFound) body["failure_reason"] = result.reason
+        if (result is ScanResult.Failure)      body["failure_reason"] = result.reason
+        if (result is ScanResult.NotFound)     body["failure_reason"] = result.reason
         if (result is ScanResult.AmountMismatch) body["failure_reason"] = "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
+
+        // إضافة معرّف طلب الدفع + وقت انتهاء الصلاحية لـ Edge Function لتنفيذ confirm_payment_order
+        if (!task.paymentOrderId.isNullOrEmpty()) body["payment_order_id"] = task.paymentOrderId
+        if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
 
         WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, msg, _ ->
             Log.d(TAG, "Task result sent: $success — $msg")

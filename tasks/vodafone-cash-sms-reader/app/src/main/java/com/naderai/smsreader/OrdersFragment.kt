@@ -123,7 +123,9 @@ class OrdersFragment : Fragment() {
             customerEmail = order.customerEmail,
             customerPhone = order.customerPhone,
             paymentMethod = order.paymentMethod,
-            requestCreatedAt = null
+            requestCreatedAt = null,
+            paymentOrderId = null,
+            orderExpiresAt = null
         )
         SmsMonitorService.forceScanTask(requireContext(), task)
     }
