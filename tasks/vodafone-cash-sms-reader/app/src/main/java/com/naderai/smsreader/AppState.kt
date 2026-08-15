@@ -27,6 +27,51 @@ object AppState {
     // Orders list
     val orders = MutableLiveData<List<OrderItem>>(emptyList())
 
+    /**
+     * يدمج قائمة طلبات جديدة من السيرفر مع الطلبات المحلية.
+     * لا يحذف الطلبات القديمة، ولا يعيد الحالات النهائية إلى قيد المراجعة.
+     */
+    fun mergeOrders(newOrders: List<OrderItem>) {
+        val current = orders.value?.toMutableList() ?: mutableListOf()
+        val currentMap = current.associateBy { it.requestId }.toMutableMap()
+
+        for (order in newOrders) {
+            val existing = currentMap[order.requestId]
+            if (existing != null) {
+                // لا نعيد الحالة النهائية إلى حالة مبدئية
+                val isTerminal = existing.status in setOf(
+                    OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
+                    OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE
+                )
+                val mergedStatus = if (isTerminal) existing.status else order.status
+                // نحافظ على البيانات الحساسة (task_id, expiry) إذا كانت موجودة في السيرفر
+                currentMap[order.requestId] = order.copy(
+                    status = mergedStatus,
+                    updatedAt = order.updatedAt,
+                    scanAttempt = if (existing.status == OrderStatus.SCANNING) existing.scanAttempt else order.scanAttempt,
+                    maxAttempts = if (existing.maxAttempts > order.maxAttempts) existing.maxAttempts else order.maxAttempts,
+                    nextScanCountdown = if (existing.status == OrderStatus.SCANNING) existing.nextScanCountdown else order.nextScanCountdown,
+                    failureReason = order.failureReason ?: existing.failureReason,
+                    transactionId = order.transactionId ?: existing.transactionId
+                )
+            } else {
+                currentMap[order.requestId] = order
+            }
+        }
+
+        val merged = currentMap.values.sortedByDescending { it.createdAt }
+        orders.postValue(merged)
+        pendingCount.postValue(merged.count { it.status == OrderStatus.PENDING || it.status == OrderStatus.SCANNING })
+        confirmedCount.postValue(merged.count { it.status == OrderStatus.CONFIRMED })
+        failedCount.postValue(merged.count { it.status in setOf(OrderStatus.FAILED, OrderStatus.AMOUNT_MISMATCH) })
+        notFoundCount.postValue(merged.count { it.status == OrderStatus.NOT_FOUND })
+    }
+
+    fun setOrders(ordersList: List<OrderItem>) {
+        orders.postValue(ordersList)
+        pendingCount.postValue(ordersList.count { it.status == OrderStatus.PENDING || it.status == OrderStatus.SCANNING })
+    }
+
     // Pending tasks from heartbeat
     val pendingTasks = MutableLiveData<List<TaskScanner.Task>>(emptyList())
 
@@ -255,5 +300,8 @@ data class OrderItem(
     // عداد المحاولات
     val scanAttempt: Int = 0,
     val maxAttempts: Int = 3,
-    val nextScanCountdown: Int = 0   // ثواني حتى المحاولة القادمة
+    val nextScanCountdown: Int = 0,   // ثواني حتى المحاولة القادمة
+    // حقول نظام الطلبات المؤمنة (payment_orders)
+    val paymentOrderId: String? = null,
+    val orderExpiresAt: String? = null
 )

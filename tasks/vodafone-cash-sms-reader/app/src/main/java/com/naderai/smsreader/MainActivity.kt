@@ -6,10 +6,13 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.tabs.TabLayoutMediator
 import com.naderai.smsreader.databinding.ActivityMainBinding
 
+import androidx.lifecycle.Observer
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: MainPagerAdapter
+    private var orderSyncManager: OrderSyncManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Catch-all to prevent crash loops and let the user see diagnostics
@@ -46,7 +49,38 @@ class MainActivity : AppCompatActivity() {
             tab.text = adapter.getTitle(position)
         }.attach()
 
+        loadOrdersFromStorage()
+        AppState.orders.observe(this, Observer { orders ->
+            OrderStorage.saveOrders(this, orders)
+        })
         startServiceIfConfigured()
+        startOrderSyncManager()
+    }
+
+    private fun loadOrdersFromStorage() {
+        try {
+            val cached = OrderStorage.loadOrders(this)
+            if (cached.isNotEmpty()) {
+                AppState.setOrders(cached)
+                android.util.Log.d("MainActivity", "Loaded ${cached.size} orders from local storage")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to load local orders: ${e.message}")
+        }
+    }
+
+    private fun startOrderSyncManager() {
+        val rawUrl = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_WEBHOOK_URL, null)
+        val adminUrl = SupabaseConfig.getAdminOrdersUrl(rawUrl)
+        if (adminUrl != null) {
+            orderSyncManager?.stop()
+            orderSyncManager = OrderSyncManager(this, adminUrl) { success, msg ->
+                if (!success) {
+                    android.util.Log.d("OrderSyncManager", "Sync result: $msg")
+                }
+            }
+            orderSyncManager?.start()
+        }
     }
 
     override fun onResume() {
@@ -57,6 +91,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         startServiceIfConfigured()
+        startOrderSyncManager()
     }
 
     private fun startServiceIfConfigured() {

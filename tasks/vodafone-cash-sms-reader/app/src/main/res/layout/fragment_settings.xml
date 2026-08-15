@@ -72,6 +72,46 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- Admin session card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="جلسة الأدمن" android:textSize="14sp" android:textStyle="bold"
+                    android:layout_marginBottom="10dp"/>
+
+                <TextView android:id="@+id/adminSessionText"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="غير مسجل الدخول" android:textSize="13sp"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/adminLoginButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="تسجيل دخول الأدمن"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/adminLogoutButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="تسجيل الخروج"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
         <!-- Connection test card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"

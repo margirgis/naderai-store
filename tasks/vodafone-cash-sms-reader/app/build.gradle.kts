@@ -11,8 +11,8 @@ android {
         applicationId = "com.naderai.smsreader"
         minSdk = 24
         targetSdk = 34
-        versionCode = 19
-        versionName = "1.1.8"
+        versionCode = 20
+        versionName = "1.1.9"
     }
 
     signingConfigs {
@@ -61,4 +61,6 @@ dependencies {
     // Network
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // Encrypted storage for admin session
+    implementation("androidx.security:security-crypto:1.0.0")
 }

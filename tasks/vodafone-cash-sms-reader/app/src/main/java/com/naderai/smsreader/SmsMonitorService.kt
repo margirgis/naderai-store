@@ -30,6 +30,9 @@ class SmsMonitorService : Service() {
         var isRunning = false
 
         @JvmStatic
+        private var serviceInstance: SmsMonitorService? = null
+
+        @JvmStatic
         fun start(context: Context) {
             val intent = Intent(context, SmsMonitorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -178,6 +181,7 @@ processTask(context, task, webhookUrl, secret)
         super.onCreate()
         try {
             isRunning = true
+            serviceInstance = this
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, buildNotification("جاري الاتصال..."))
             acquireWakeLock()
@@ -222,17 +226,18 @@ heartbeatManager?.start()
         return START_STICKY
 }
 
-    private fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
+    @JvmStatic
+    fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
         if (tasks.isEmpty()) {
             AppState.pendingTasks.postValue(emptyList())
             return
-}
-android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
-AppState.pendingTasks.postValue(tasks)
+        }
+        android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
+        AppState.pendingTasks.postValue(tasks)
 
         TaskScanner.taskResultCallback = { task, result ->
             AppState.onTaskResult(task, result)
-}
+        }
 
         tasks.forEach { task ->
             // حماية مزدوجة: تحقق من الحالة النهائية في AppState
@@ -251,57 +256,62 @@ AppState.pendingTasks.postValue(tasks)
                 applyCachedStatus(task.requestId, cached)
                 resendCachedResult(context, task, cached, webhookUrl, secret)
                 return@forEach
+            }
+            processTask(context, task, webhookUrl, secret)
+        }
+        updateNotificationFromStatic("جاري فحص ${tasks.size} طلب...")
     }
-    processTask(context, task, webhookUrl, secret)
-}
-updateNotification("جاري فحص ${tasks.size} طلب...")
-}
 
     override fun onDestroy() {
         isRunning = false
+        serviceInstance = null
         heartbeatManager?.stop()
         heartbeatManager = null
         wakeLock?.release()
         wakeLock = null
         super.onDestroy()
-}
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun updateNotificationFromStatic(text: String) {
+        serviceInstance?.updateNotification(text)
+    }
+
+    private fun updateNotification(statusText: String) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIFICATION_ID, buildNotification(statusText))
+    }
 
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "NaderAI::SmsMonitorWakeLock"
-).also { it.acquire() }
-}
+        ).also { it.acquire() }
+    }
 
     private fun buildNotification(statusText: String): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
-)
-val stopIntent = PendingIntent.getService(
-    this, 1,
-    Intent(this, SmsMonitorService::class.java).apply { action = ACTION_STOP },
-    PendingIntent.FLAG_IMMUTABLE
-)
-return NotificationCompat.Builder(this, CHANNEL_ID)
-    .setContentTitle("Nader AI SMS Reader")
-    .setContentText(statusText)
-    .setSmallIcon(android.R.drawable.ic_dialog_info)
-    .setContentIntent(openIntent)
-    .addAction(android.R.drawable.ic_delete, "إيقاف", stopIntent)
-    .setOngoing(true)
-    .setPriority(NotificationCompat.PRIORITY_LOW)
-    .build()
-}
-
-    private fun updateNotification(statusText: String) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildNotification(statusText))
-}
+        )
+        val stopIntent = PendingIntent.getService(
+            this, 1,
+            Intent(this, SmsMonitorService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Nader AI SMS Reader")
+            .setContentText(statusText)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(openIntent)
+            .addAction(android.R.drawable.ic_delete, "إيقاف", stopIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -309,12 +319,11 @@ return NotificationCompat.Builder(this, CHANNEL_ID)
                 CHANNEL_ID,
                 "Nader AI SMS Monitor",
                 NotificationManager.IMPORTANCE_LOW
-    ).apply {
-        description = "يقوم بمراقبة طلبات الشحن وإرسال Heartbeat"
+            ).apply {
+                description = "يقوم بمراقبة طلبات الشحن وإرسال Heartbeat"
+            }
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(channel)
+        }
+    }
 }
-val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-nm.createNotificationChannel(channel)
-}
-}
-}
-

@@ -24,11 +24,42 @@ class SettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         loadConfig()
         showDeviceStatus()
+        updateAdminSessionUI()
 
         binding.saveButton.setOnClickListener { saveConfig() }
         binding.testConnectionButton.setOnClickListener { testConnection() }
         binding.registerButton.setOnClickListener { forceRegister() }
         binding.clearQueueButton.setOnClickListener { clearRetryQueue() }
+        binding.adminLoginButton.setOnClickListener { startLoginActivity() }
+        binding.adminLogoutButton.setOnClickListener { logoutAdmin() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateAdminSessionUI()
+    }
+
+    private fun updateAdminSessionUI() {
+        val ctx = requireContext()
+        if (AdminSession.isLoggedIn(ctx)) {
+            binding.adminSessionText.text = "مسجل الدخول: ${AdminSession.email(ctx) ?: "—"}"
+            binding.adminLoginButton.visibility = View.GONE
+            binding.adminLogoutButton.visibility = View.VISIBLE
+        } else {
+            binding.adminSessionText.text = "غير مسجل الدخول — سجل دخولك كأدمن لعرض كل الطلبات"
+            binding.adminLoginButton.visibility = View.VISIBLE
+            binding.adminLogoutButton.visibility = View.GONE
+        }
+    }
+
+    private fun startLoginActivity() {
+        startActivity(Intent(requireContext(), LoginActivity::class.java))
+    }
+
+    private fun logoutAdmin() {
+        AdminSession.clear(requireContext())
+        updateAdminSessionUI()
+        Toast.makeText(requireContext(), "تم تسجيل الخروج", Toast.LENGTH_SHORT).show()
     }
 
     private fun loadConfig() {

@@ -116,7 +116,7 @@ class OrdersFragment : Fragment() {
             amountRequested = order.expectedAmount,
             senderPhoneRequested = order.customerPhone,
             senderNameRequested = null,
-            fingerprintAmount = null,
+            fingerprintAmount = order.expectedAmount,
             creditsAmount = order.creditsRequested?.toDouble(),
             orderNumber = order.orderNumber,
             creditsRequested = order.creditsRequested,
@@ -124,8 +124,8 @@ class OrdersFragment : Fragment() {
             customerPhone = order.customerPhone,
             paymentMethod = order.paymentMethod,
             requestCreatedAt = null,
-            paymentOrderId = null,
-            orderExpiresAt = null
+            paymentOrderId = order.paymentOrderId,
+            orderExpiresAt = order.orderExpiresAt
         )
         SmsMonitorService.forceScanTask(requireContext(), task)
     }

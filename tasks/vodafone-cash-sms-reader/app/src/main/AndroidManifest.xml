@@ -48,6 +48,11 @@
             android:launchMode="singleTask" />
 
         <activity
+            android:name=".LoginActivity"
+            android:exported="false"
+            android:label="تسجيل الدخول" />
+
+        <activity
             android:name=".TestSmsActivity"
             android:exported="false"
             android:label="تجربة فحص الرسالة" />
