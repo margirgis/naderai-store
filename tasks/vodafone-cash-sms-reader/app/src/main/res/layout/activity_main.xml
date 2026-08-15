@@ -1,166 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center_horizontal"
-        android:spacing="12dp">
+        app:tabMode="scrollable"
+        app:tabGravity="start"
+        app:tabIndicatorColor="?attr/colorPrimary"
+        app:tabSelectedTextColor="?attr/colorPrimary"
+        app:tabTextColor="?attr/colorOnSurface" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Nader AI SMS Reader"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:layout_marginTop="16dp" />
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/viewPager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="يقرأ رسائل فودافون كاش ويرسل تأكيد للموقع"
-            android:textSize="14sp"
-            android:alpha="0.7"
-            android:layout_marginBottom="16dp" />
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="12dp">
-
-            <View
-                android:id="@+id/statusDot"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:background="@drawable/status_offline"
-                android:layout_marginEnd="8dp" />
-
-            <TextView
-                android:id="@+id/statusText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="غير معروف"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="?attr/colorSurfaceVariant"
-            android:padding="12dp"
-            android:layout_marginBottom="16dp"
-            android:layout_marginTop="8dp">
-
-            <TextView
-                android:id="@+id/deviceIdText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="معرّف الجهاز: —"
-                android:textSize="12sp"
-                android:fontFamily="monospace"
-                android:layout_marginBottom="4dp" />
-
-            <TextView
-                android:id="@+id/deviceModelText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="الطراز: —"
-                android:textSize="12sp"
-                android:layout_marginBottom="4dp" />
-
-            <TextView
-                android:id="@+id/androidVersionText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Android: —"
-                android:textSize="12sp"
-                android:layout_marginBottom="4dp" />
-
-            <TextView
-                android:id="@+id/appVersionText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="إصدار التطبيق: —"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Webhook URL"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/webhookUrlInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textUri" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="X-SMS-Webhook-Secret"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-            app:endIconMode="password_toggle"
-            android:layout_marginTop="12dp">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/secretInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textVisiblePassword" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/saveButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="حفظ الإعدادات"
-            android:layout_marginTop="16dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/testButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="إرسال اختبار"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_marginTop="8dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/refreshTasksButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="تحديث المهام"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_marginTop="8dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="التعليمات:
-1. أدخل رابط الوميات الموقع.
-2. انسخ السر من إعدادات الموقع.
-3. اجعل التطبيق يعمل في الخلفية.
-4. عند وصول أي رسالة فودافون كاش سيتم إرسالها تلقائياً.
-
-ملاحظات:
-- التطبيق يحتاج إذن وافتحاح الشاشة الرئيسية.
-- لا يمكن للتطبيق القراءة القديمة التي وصلت قبل تثبيته.
-- يمكن استخدام الصفحة الرئيسية للاختبار."
-            android:textSize="12sp"
-            android:alpha="0.7"
-            android:layout_marginTop="24dp" />
-
-    </LinearLayout>
-</ScrollView>
+</LinearLayout>

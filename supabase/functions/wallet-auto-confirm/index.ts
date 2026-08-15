@@ -1,6 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { handleCors, jsonResponse, errorResponse } from '../_shared/cors.ts';
 
+// ── Wallet-Auto-Confirm v2 ──────────────────────────────────────────────────
+// Handles: heartbeat | task_result | test_ping | legacy SMS webhook
+
 interface SmsPayload {
   sender_phone?: string;
   sender_name?: string;
@@ -77,6 +80,7 @@ interface HeartbeatPayload {
   android_version?: string;
   app_version?: string;
   phone_number?: string;
+  capabilities?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -84,16 +88,29 @@ interface TaskResultPayload {
   action: 'task_result';
   device_id: string;
   task_id: string;
-  status: 'success' | 'failure' | 'not_found';
+  idempotency_key?: string;
+  status: 'success' | 'failure' | 'not_found' | 'amount_mismatch' | 'duplicate';
   result_data?: {
     sender_phone?: string;
     sender_name?: string;
     amount?: number;
     transaction_id?: string;
+    receiver_wallet?: string;
+    transaction_time?: string;
     sms_body?: string;
     scanned_at?: string;
   };
   failure_reason?: string;
+  [key: string]: unknown;
+}
+
+interface TestPingPayload {
+  action: 'test_ping';
+  device_id: string;
+  app_version?: string;
+  device_model?: string;
+  android_version?: string;
+  sent_at?: string;
   [key: string]: unknown;
 }
 
@@ -103,6 +120,10 @@ function isHeartbeat(payload: Record<string, unknown>): payload is HeartbeatPayl
 
 function isTaskResult(payload: Record<string, unknown>): payload is TaskResultPayload {
   return payload.action === 'task_result' && typeof payload.device_id === 'string' && typeof payload.task_id === 'string';
+}
+
+function isTestPing(payload: Record<string, unknown>): payload is TestPingPayload {
+  return payload.action === 'test_ping' && typeof payload.device_id === 'string';
 }
 
 Deno.serve(async (req: Request) => {
@@ -128,7 +149,35 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Invalid JSON', 400);
   }
 
-  // Heartbeat from Android device: update status and return pending tasks
+  // ── Test Ping ────────────────────────────────────────────────────────────
+  if (isTestPing(payload)) {
+    const receivedAt = new Date().toISOString();
+    const sentAt = payload.sent_at ? new Date(payload.sent_at as string).getTime() : null;
+    const responseTimeMs = sentAt ? Date.now() - sentAt : null;
+
+    await db.from('sms_device_status').upsert({
+      device_id: payload.device_id,
+      device_model: payload.device_model ?? null,
+      android_version: payload.android_version ?? null,
+      app_version: payload.app_version ?? null,
+      last_heartbeat_at: receivedAt,
+      last_test_at: receivedAt,
+      last_test_result: 'success',
+      response_time_ms: responseTimeMs,
+      status: 'online',
+      is_active: true,
+    }, { onConflict: 'device_id' });
+
+    return jsonResponse({
+      ok: true,
+      action: 'test_ping',
+      received_at: receivedAt,
+      response_time_ms: responseTimeMs,
+      server_status: 'online',
+    });
+  }
+
+  // ── Heartbeat ─────────────────────────────────────────────────────────────
   if (isHeartbeat(payload)) {
     await db.from('sms_device_status').upsert({
       device_id: payload.device_id,
@@ -137,6 +186,7 @@ Deno.serve(async (req: Request) => {
       android_version: payload.android_version ?? null,
       app_version: payload.app_version ?? null,
       phone_number: payload.phone_number ?? null,
+      capabilities: payload.capabilities ?? {},
       last_heartbeat_at: new Date().toISOString(),
       status: 'online',
       is_active: true,
@@ -154,15 +204,25 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Task result from Android device: complete task and possibly auto-approve
+  // ── Task Result ───────────────────────────────────────────────────────────
   if (isTaskResult(payload)) {
+    // Idempotency: check if this task_id was already completed (via idempotency_key)
+    if (payload.idempotency_key) {
+      const { data: existing } = await db
+        .from('pending_tasks')
+        .select('task_status, result_status, result_data')
+        .eq('id', payload.task_id)
+        .single();
+      if (existing?.task_status === 'completed') {
+        return jsonResponse({ ok: true, idempotent: true, result_status: existing.result_status });
+      }
+    }
     const { data, error } = await db.rpc('complete_device_task', {
       p_task_id: payload.task_id,
       p_status: payload.status,
       p_result_data: payload.result_data ?? null,
       p_failure_reason: payload.failure_reason ?? null,
     });
-
     if (error) return errorResponse(error.message, 500);
     return jsonResponse(data);
   }

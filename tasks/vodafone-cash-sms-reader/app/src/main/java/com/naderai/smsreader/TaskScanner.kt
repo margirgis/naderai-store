@@ -1,15 +1,11 @@
 package com.naderai.smsreader
 
 import android.content.Context
-import android.database.Cursor
-import android.net.Uri
-import android.os.Build
 import android.provider.Telephony
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -41,7 +37,8 @@ object TaskScanner {
         val amount: Double?,
         val transactionId: String?,
         val body: String,
-        val date: Long
+        val date: Long,
+        val receiverWallet: String? = null
     )
 
     fun scanAndReport(context: Context, task: Task, webhookUrl: String, secret: String) {
@@ -109,6 +106,17 @@ object TaskScanner {
             return ScanResult.Success(best)
         }
 
+        // Amount mismatch: found a message from same sender but amount differs
+        val phoneOnlyMatch = candidates.filter { it.phoneMatch && !it.amountMatch }
+        if (phoneOnlyMatch.isNotEmpty()) {
+            val closest = phoneOnlyMatch.maxByOrNull { it.score }!!
+            return ScanResult.AmountMismatch(
+                closest,
+                expectedAmount = task.fingerprintAmount ?: task.amountRequested,
+                foundAmount = closest.amount ?: 0.0
+            )
+        }
+
         if (candidates.isEmpty()) {
             return ScanResult.NotFound("لم يتم العثور على رسائل فودافون كاش في الجهاز")
         }
@@ -123,12 +131,15 @@ object TaskScanner {
         webhookUrl: String,
         secret: String
     ) {
+        val idempotencyKey = "${task.taskId}-${task.requestId}"
         val body = mutableMapOf<String, Any>(
             "action" to "task_result",
             "device_id" to HeartbeatManager.getDeviceId(context),
             "task_id" to task.taskId,
+            "idempotency_key" to idempotencyKey,
             "status" to when (result) {
                 is ScanResult.Success -> "success"
+                is ScanResult.AmountMismatch -> "amount_mismatch"
                 is ScanResult.NotFound -> "not_found"
                 is ScanResult.Failure -> "failure"
             }
@@ -141,6 +152,7 @@ object TaskScanner {
                 "sender_name" to (m.senderName ?: ""),
                 "amount" to (m.amount ?: 0.0),
                 "transaction_id" to (m.transactionId ?: ""),
+                "receiver_wallet" to (m.receiverWallet ?: ""),
                 "sms_body" to m.body,
                 "scanned_at" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
                     timeZone = TimeZone.getTimeZone("UTC")
@@ -148,25 +160,29 @@ object TaskScanner {
             )
         }
 
-        if (result is ScanResult.Failure) {
-            body["failure_reason"] = result.reason
-        }
-        if (result is ScanResult.NotFound) {
-            body["failure_reason"] = result.reason
-        }
+        if (result is ScanResult.Failure) body["failure_reason"] = result.reason
+        if (result is ScanResult.NotFound) body["failure_reason"] = result.reason
+        if (result is ScanResult.AmountMismatch) body["failure_reason"] = "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
 
-        WebhookSender.sendJson(webhookUrl, secret, body) { success, msg ->
+        WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, msg, _ ->
             Log.d(TAG, "Task result sent: $success — $msg")
+            // Notify local observer for UI update
+            taskResultCallback?.invoke(task.taskId, result)
         }
     }
+
+    // Callback for UI updates when a task result is sent
+    var taskResultCallback: ((taskId: String, result: ScanResult) -> Unit)? = null
 
     private fun isVodafoneCashMessage(body: String): Boolean {
         return KEYWORDS.any { body.contains(it, ignoreCase = true) }
     }
 
+    // Enhanced SMS parser — extracts transaction_id, receiver_wallet, sender_name
     private fun parseSmsBody(text: String): ParsedSms {
         val amountRegexes = listOf(
             Regex("مبلغ\\s*([\\d,]+\\.?\\d{0,2})\\s*جنيه"),
+            Regex("تم استلام مبلغ\\s*([\\d,]+\\.?\\d{0,2})"),
             Regex("استلمت\\s+(?:من\\s+.+?\\s+)?مبلغ\\s*([\\d,]+\\.?\\d{0,2})"),
             Regex("received\\s+(?:egp\\s+)?([\\d,]+\\.?\\d{0,2})", RegexOption.IGNORE_CASE),
             Regex("egp\\s+([\\d,]+\\.?\\d{0,2})", RegexOption.IGNORE_CASE),
@@ -182,8 +198,9 @@ object TaskScanner {
             }
         }
 
+        // Phone — from SMS sender line e.g. "من 01152210028"
         val phoneRegexes = listOf(
-            Regex("من\\s*(\\+?01[0-9]{9})"),
+            Regex("من\\s*(\\+?0?1[0-9]{9})"),
             Regex("from\\s*(\\+?\\d[\\d ]{8,14})", RegexOption.IGNORE_CASE),
             Regex("(\\+?20\\s*1\\d{9})"),
             Regex("(01[0-9]{9})")
@@ -191,13 +208,12 @@ object TaskScanner {
         var senderPhone: String? = null
         for (re in phoneRegexes) {
             val m = re.find(text)
-            if (m != null) {
-                senderPhone = m.groupValues[1].replace("\\s".toRegex(), ""); break
-            }
+            if (m != null) { senderPhone = m.groupValues[1].replace("\\s".toRegex(), ""); break }
         }
 
+        // Sender name — "بإسم AHMED REDA على" or "المسجل بإسم"
         val nameRegexes = listOf(
-            Regex("بإسم\\s+([A-Za-z][A-Za-z0-9 ]{1,30})\\s*على"),
+            Regex("(?:المسجل\\s+)?بإسم\\s+([A-Za-z][A-Za-z0-9 ]{1,40})\\s*على"),
             Regex("باسم\\s+([\\u0600-\\u06FF ]{2,30})\\s+"),
             Regex("from\\s+([A-Za-z][A-Za-z ]{1,30})\\s+on", RegexOption.IGNORE_CASE)
         )
@@ -210,11 +226,23 @@ object TaskScanner {
             }
         }
 
+        // Receiver wallet — "على رقم محفظتك 01097273680"
+        val walletRegexes = listOf(
+            Regex("على رقم محفظتك\\s*(0?1[0-9]{9})"),
+            Regex("wallet[:\\s]*(\\+?0?1[0-9]{9})", RegexOption.IGNORE_CASE)
+        )
+        var receiverWallet: String? = null
+        for (re in walletRegexes) {
+            val m = re.find(text)
+            if (m != null) { receiverWallet = m.groupValues[1]; break }
+        }
+
+        // Transaction ID — "رقم العملية: 022655099780"
         val txRegexes = listOf(
+            Regex("رقم العملية[:\\s]+([A-Za-z0-9]+)"),
             Regex("كود المعاملة[:\\s]+([A-Za-z0-9]+)"),
             Regex("transaction\\s*id[:\\s]+([A-Za-z0-9]+)", RegexOption.IGNORE_CASE),
-            Regex("رقم العملية[:\\s]+([A-Za-z0-9]+)"),
-            Regex("\\b([A-Z]{2,}[0-9]{4,})\\b")
+            Regex("\\b([0-9]{9,20})\\b")
         )
         var transactionId: String? = null
         for (re in txRegexes) {
@@ -222,7 +250,7 @@ object TaskScanner {
             if (m != null) { transactionId = m.groupValues[1]; break }
         }
 
-        return ParsedSms(senderPhone, senderName, amount, transactionId, text, 0)
+        return ParsedSms(senderPhone, senderName, amount, transactionId, text, 0, receiverWallet)
     }
 
     private fun normalizeEgyptianPhone(raw: String): String {
@@ -238,6 +266,7 @@ object TaskScanner {
 
     sealed class ScanResult {
         data class Success(val message: ScannedMessage) : ScanResult()
+        data class AmountMismatch(val message: ScannedMessage, val expectedAmount: Double, val foundAmount: Double) : ScanResult()
         data class Failure(val reason: String) : ScanResult()
         data class NotFound(val reason: String) : ScanResult()
     }
@@ -252,6 +281,7 @@ object TaskScanner {
         val date: Long,
         val amountMatch: Boolean,
         val phoneMatch: Boolean,
-        val score: Int
+        val score: Int,
+        val receiverWallet: String? = null
     )
 }

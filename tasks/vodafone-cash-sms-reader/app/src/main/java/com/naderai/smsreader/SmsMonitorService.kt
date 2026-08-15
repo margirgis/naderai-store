@@ -64,10 +64,17 @@ class SmsMonitorService : Service() {
     private fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
         if (tasks.isEmpty()) return
         android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
+        // Update global state for UI
+        AppState.pendingTasks.postValue(tasks)
         tasks.forEach { task ->
+            // Set scanner callback so UI gets updated
+            TaskScanner.taskResultCallback = { taskId, result ->
+                AppState.onTaskResult(task, result)
+                // If offline, enqueue for retry
+            }
             TaskScanner.scanAndReport(context, task, webhookUrl, secret)
         }
-        updateNotification("جاري فحص ${tasks.size} طلب...")
+        updateNotification("يفحص ${tasks.size} طلب...")
     }
 
     override fun onDestroy() {
