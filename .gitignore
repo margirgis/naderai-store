@@ -47,3 +47,6 @@ historical_context.txt
 /tasks/*.jpg
 /tasks/*.jpeg
 /tasks/*.png
+/tasks/vodafone-cash-sms-reader/.gradle/
+/tasks/vodafone-cash-sms-reader/app/build/
+/tasks/vodafone-cash-sms-reader/*.log
