@@ -67,16 +67,16 @@ class TestSmsActivity : AppCompatActivity() {
         binding.resultText.visibility = View.VISIBLE
 
         val isMatch = parsed.amount != null && parsed.senderPhone != null && parsed.transactionId != null
-        binding.matchBadge.apply {
-            visibility = View.VISIBLE
+        binding.matchBadge.also { badge ->
+            badge.visibility = View.VISIBLE
             if (isMatch) {
-                text = "✅ تم التطابق — الرسالة مقروءة"
-                setBackgroundColor(resources.getColor(android.R.color.holo_green_dark, theme))
-                setTextColor(resources.getColor(android.R.color.white, theme))
+                badge.text = "✅ تم التطابق — الرسالة مقروءة"
+                badge.setBackgroundColor(resources.getColor(android.R.color.holo_green_dark, theme))
+                badge.setTextColor(resources.getColor(android.R.color.white, theme))
             } else {
-                text = "❌ لا توجد مطابقة تامة"
-                setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, theme))
-                setTextColor(resources.getColor(android.R.color.white, theme))
+                badge.text = "❌ لا توجد مطابقة تامة"
+                badge.setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, theme))
+                badge.setTextColor(resources.getColor(android.R.color.white, theme))
             }
         }
     }
