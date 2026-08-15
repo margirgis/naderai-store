@@ -141,10 +141,16 @@ class SmsMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("جاري الاتصال..."))
-        acquireWakeLock()
+        try {
+            isRunning = true
+            createNotificationChannel()
+            startForeground(NOTIFICATION_ID, buildNotification("جاري الاتصال..."))
+            acquireWakeLock()
+        } catch (e: Exception) {
+            android.util.Log.e("SmsMonitorService", "Failed to start service: ${e.message}", e)
+            AppState.lastError.postValue("فشل تشغيل خدمة SMS: ${e.message}")
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

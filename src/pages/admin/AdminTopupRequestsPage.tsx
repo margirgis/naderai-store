@@ -89,15 +89,16 @@ export default function AdminTopupRequestsPage() {
   }, [load, filter]);
 
   const handleApprove = async (r: WalletTopupRequest) => {
-    if (!confirm(`تأكيد إضافة ${r.amount} Credit للعميل؟`)) return;
+    const credits = r.credits_requested ?? 1;
+    if (!confirm(`تأكيد إضافة ${credits} Credit للعميل؟ (المبلغ: ${r.amount} جنيه)`)) return;
     setProcessing(r.id);
     try {
       const { error } = await supabase.functions.invoke('admin-wallet-topup', {
         body: {
           customer_id: r.customer_id,
           type: 'credit',
-          amount: r.amount,
-          reason: `شحن فودافون كاش يدوي - ${(r as any).sender_phone ?? ''}`,
+          amount: credits,
+          reason: `شحن فودافون كاش يدوي - ${credits} credit - ${(r as any).sender_phone ?? ''}`,
         },
       });
       if (error) { toast.error('فشل إضافة الرصيد: ' + error.message); return; }
@@ -107,7 +108,7 @@ export default function AdminTopupRequestsPage() {
         matched_automatically: false,
         notes: 'موافقة يدوية من الأدمن',
       }).eq('id', r.id);
-      toast.success(`✓ تمت الموافقة على شحن ${r.amount} Credit`);
+      toast.success(`✓ تمت الموافقة على شحن ${credits} Credit`);
     } finally {
       setProcessing(null);
     }
