@@ -61,7 +61,7 @@ class HeartbeatManager(
             "device_model" to (Build.MODEL ?: "Unknown"),
             "device_name" to (Build.DEVICE ?: "Unknown"),
             "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
-            "app_version" to "1.0.5",
+            "app_version" to BuildConfig.VERSION_NAME,
             "phone_number" to "",
             "capabilities" to mapOf(
                 "sms_read" to true,
@@ -100,7 +100,7 @@ class HeartbeatManager(
             "device_model" to (Build.MODEL ?: "Unknown"),
             "device_name" to (Build.DEVICE ?: "Unknown"),
             "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
-            "app_version" to "1.0.5",
+            "app_version" to BuildConfig.VERSION_NAME,
             "phone_number" to "",
             "capabilities" to mapOf(
                 "sms_read" to true,
@@ -210,7 +210,7 @@ class HeartbeatManager(
             "response_data" to mapOf(
                 "command_type" to commandType,
                 "device_model" to (Build.MODEL ?: "Unknown"),
-                "app_version" to "1.0.5"
+                "app_version" to BuildConfig.VERSION_NAME
             )
         )
         WebhookSender.sendJsonWithBody(webhookUrl, secret, ackPayload) { success, _, _ ->

@@ -44,7 +44,7 @@ class SettingsFragment : Fragment() {
         binding.deviceIdValue.text = HeartbeatManager.getDeviceId(ctx)
         binding.deviceModelValue.text = Build.MODEL ?: "—"
         binding.androidVersionValue.text = Build.VERSION.RELEASE ?: "—"
-        binding.appVersionValue.text = "1.0.5"
+        binding.appVersionValue.text = BuildConfig.VERSION_NAME
         binding.retryQueueSize.text = "الطابور: ${RetryQueue.size(ctx)} عنصر"
 
         AppState.isConnected.observe(viewLifecycleOwner) { connected ->
@@ -80,15 +80,20 @@ class SettingsFragment : Fragment() {
         }
         val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
         if (webhookUrl.isNullOrEmpty()) {
-            Toast.makeText(requireContext(), "رابط Supabase غير صالح", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "رابط Supabase غير صالح — يجب أن يبدأ بـ https://", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!secret.startsWith("eyJ") || secret.length < 200) {
+            Toast.makeText(requireContext(), "Anon Key غير صالح — تأكد من نسخه بالكامل (يبدأ بـ eyJ)", Toast.LENGTH_LONG).show()
             return
         }
         requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0).edit()
             .putString(MainActivity.KEY_WEBHOOK_URL, rawUrl)
             .putString(MainActivity.KEY_SECRET, secret)
             .apply()
-        Toast.makeText(requireContext(), "✓ تم الاتصال بـ: $webhookUrl", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), "✓ تم حفظ الإعدادات — يتم اختبار الاتصال الآن", Toast.LENGTH_SHORT).show()
         SmsMonitorService.start(requireContext())
+        testConnection()
     }
 
     private fun forceRegister() {
@@ -100,17 +105,29 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
             return
         }
+        if (secret.isNullOrEmpty() || !secret.startsWith("eyJ") || secret.length < 200) {
+            Toast.makeText(requireContext(), "Anon Key غير صالح — تأكد من نسخه بالكامل", Toast.LENGTH_LONG).show()
+            return
+        }
         binding.registerButton.isEnabled = false
         binding.testResultText.text = "جاري التسجيل…"
         val hb = HeartbeatManager(requireContext(), url, secret,
-            onStatusChange = { _, _ -> },
+            onStatusChange = { connected, msg ->
+                activity?.runOnUiThread {
+                    binding.registerButton.isEnabled = true
+                    if (connected) {
+                        binding.testResultText.text = "✅ تم التسجيل بنجاح — $msg"
+                        binding.testResultText.setTextColor(resources.getColor(android.R.color.holo_green_dark, null))
+                        AppState.lastError.postValue(null)
+                    } else {
+                        binding.testResultText.text = "❌ فشل التسجيل — $msg"
+                        binding.testResultText.setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
+                    }
+                }
+            },
             onPendingTasks = { _ -> }
         )
         hb.registerDevice()
-        activity?.runOnUiThread {
-            binding.registerButton.isEnabled = true
-            binding.testResultText.text = "⏳ تم إرسال طلب التسجيل — تحقق من حالة الاتصال"
-        }
     }
 
     private fun testConnection() {
@@ -122,6 +139,10 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
             return
         }
+        if (secret.isNullOrEmpty() || !secret.startsWith("eyJ") || secret.length < 200) {
+            Toast.makeText(requireContext(), "Anon Key غير صالح — تأكد من نسخه بالكامل", Toast.LENGTH_LONG).show()
+            return
+        }
         binding.testConnectionButton.isEnabled = false
         binding.testResultText.text = "جاري الاختبار…"
         val sentAt = System.currentTimeMillis()
@@ -130,7 +151,7 @@ class SettingsFragment : Fragment() {
             "device_id" to HeartbeatManager.getDeviceId(requireContext()),
             "device_model" to (Build.MODEL ?: "Unknown"),
             "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
-            "app_version" to "1.0.5",
+            "app_version" to BuildConfig.VERSION_NAME,
             "sent_at" to java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.getDefault())
                 .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(sentAt))
         )
@@ -142,9 +163,17 @@ class SettingsFragment : Fragment() {
                     binding.testResultText.text = "✅ متصل — زمن الاستجابة: ${elapsed}ms"
                     binding.testResultText.setTextColor(resources.getColor(android.R.color.holo_green_dark, null))
                     AppState.lastSyncTime.postValue(System.currentTimeMillis())
+                    AppState.lastError.postValue(null)
                 } else {
-                    binding.testResultText.text = "❌ فشل: $msg"
+                    val errorMessage = when {
+                        msg.contains("401") -> "❌ فشل: 401 — Anon Key غير صحيح. تأكد من النسخ الكامل."
+                        msg.contains("404") -> "❌ فشل: 404 — رابط Supabase غير صحيح"
+                        msg.contains("timeout", true) -> "❌ فشل: انتهت مهلة الاتصال — تأكد من الإنترنت"
+                        else -> "❌ فشل: $msg"
+                    }
+                    binding.testResultText.text = errorMessage
                     binding.testResultText.setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
+                    AppState.lastError.postValue(errorMessage)
                 }
             }
         }

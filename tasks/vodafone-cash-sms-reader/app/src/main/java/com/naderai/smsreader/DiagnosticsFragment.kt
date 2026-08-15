@@ -92,7 +92,7 @@ class DiagnosticsFragment : Fragment() {
         val deviceId = HeartbeatManager.getDeviceId(ctx)
         tvDeviceId.text = deviceId.take(8) + "****" + deviceId.takeLast(4)
         tvRetryQueue.text = "${RetryQueue.size(ctx)} عنصر"
-        tvAppVersion.text = "1.0.5 — Android ${Build.VERSION.RELEASE} — ${Build.MODEL}"
+        tvAppVersion.text = "${BuildConfig.VERSION_NAME} — Android ${Build.VERSION.RELEASE} — ${Build.MODEL}"
     }
 
     private fun addTitle(text: String) {

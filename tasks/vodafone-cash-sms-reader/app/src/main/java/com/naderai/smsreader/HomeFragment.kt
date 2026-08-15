@@ -30,7 +30,7 @@ class HomeFragment : Fragment() {
         binding.deviceIdValue.text = HeartbeatManager.getDeviceId(ctx).take(16) + "…"
         binding.deviceModelValue.text = android.os.Build.MODEL ?: "—"
         binding.androidVersionValue.text = android.os.Build.VERSION.RELEASE ?: "—"
-        binding.appVersionValue.text = "1.0.5"
+        binding.appVersionValue.text = BuildConfig.VERSION_NAME
     }
 
     private fun observeState() {
