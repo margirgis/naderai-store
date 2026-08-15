@@ -233,7 +233,7 @@ export default function AdminTopupRequestsPage() {
                           <p className="text-xs text-muted-foreground font-mono">{r.id.slice(0, 12)}…</p>
                           <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                             <Clock className="w-3 h-3" />
-                            {new Date(r.created_at).toLocaleString('ar-EG')}
+                            {new Date(r.created_at).toLocaleString('ar-EG', { hour12: true, hour: 'numeric', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </p>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -317,15 +317,14 @@ export default function AdminTopupRequestsPage() {
                         </p>
                       )}
 
-                      {/* Manual actions — only for truly pending/manual_review cases */}
-                      {(r.status === 'pending' || scanStatus === 'manual_review' || scanStatus === 'amount_mismatch' || scanStatus === 'not_found') &&
-                        !isDuplicate && r.status !== 'approved' && r.status !== 'rejected' && (
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" className="flex-1 gap-1.5" onClick={() => handleApprove(r)} disabled={processing === r.id}>
+                      {/* Manual actions — for all non-final states */}
+                      {r.status !== 'approved' && r.status !== 'rejected' && !isDuplicate && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button size="sm" className="flex-1 gap-1.5 min-w-[110px]" onClick={() => handleApprove(r)} disabled={processing === r.id}>
                             {processing === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                             موافقة يدوية
                           </Button>
-                          <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => handleReject(r)} disabled={processing === r.id}>
+                          <Button size="sm" variant="outline" className="flex-1 gap-1.5 min-w-[110px]" onClick={() => handleReject(r)} disabled={processing === r.id}>
                             <XCircle className="w-3.5 h-3.5" />
                             رفض
                           </Button>
