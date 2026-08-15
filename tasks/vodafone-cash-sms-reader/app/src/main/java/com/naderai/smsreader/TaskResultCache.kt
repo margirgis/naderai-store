@@ -60,7 +60,7 @@ object TaskResultCache {
                 org.json.JSONObject().apply {
                     put("found_amount", result.foundAmount)
                     put("expected_amount", result.expectedAmount)
-                    put("sender_phone", result.foundPhone ?: "")
+                    put("sender_phone", result.message.senderPhone ?: "")
                     put("scanned_at", isoFmt.format(java.util.Date()))
                 }.toString()
             }
