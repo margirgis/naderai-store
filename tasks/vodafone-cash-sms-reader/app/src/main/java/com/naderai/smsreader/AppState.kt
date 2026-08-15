@@ -34,8 +34,10 @@ object AppState {
     val notifications = MutableLiveData<List<DeviceNotification>>(emptyList())
     val unreadNotificationCount = MutableLiveData(0)
 
-    // مجموعة لمنع تكرار الإشعارات لنفس الطلب
+    // مجموعة لمنع تكرار إشعارات الطلبات
     private val notifiedTaskIds = mutableSetOf<String>()
+    // تتبع آخر إشعار اتصال/خطأ لمنع التكرار
+    private var lastConnectionNotification: Pair<NotificationType, String>? = null
 
     fun updateFromHeartbeat(connected: Boolean, message: String) {
         isConnected.postValue(connected)
@@ -56,6 +58,12 @@ object AppState {
         if (refId != null && notification.type == NotificationType.ORDER_NEW) {
             if (notifiedTaskIds.contains(refId)) return
             notifiedTaskIds.add(refId)
+        }
+        // منع إشعارات الاتصال/الحالة المتكررة
+        if (notification.type in setOf(NotificationType.CONNECTED, NotificationType.ERROR, NotificationType.SERVER_DOWN, NotificationType.TEST_SUCCESS)) {
+            val key = notification.type to notification.message
+            if (key == lastConnectionNotification) return
+            lastConnectionNotification = key
         }
         val current = notifications.value?.toMutableList() ?: mutableListOf()
         current.add(0, notification)
@@ -147,7 +155,18 @@ object AppState {
     fun addOrUpdateOrder(order: OrderItem) {
         val current = orders.value?.toMutableList() ?: mutableListOf()
         val idx = current.indexOfFirst { it.requestId == order.requestId }
-        if (idx >= 0) current[idx] = order else current.add(0, order)
+        if (idx >= 0) {
+            // لا نعيد الطلب الموجود لحالة "قيد المراجعة" إذا كان جاري البحث أو حالة نهائية
+            val existing = current[idx]
+            val keepStatus = existing.status == OrderStatus.SCANNING ||
+                             existing.status == OrderStatus.CONFIRMED ||
+                             existing.status == OrderStatus.FAILED ||
+                             existing.status == OrderStatus.NOT_FOUND ||
+                             existing.status == OrderStatus.AMOUNT_MISMATCH
+            current[idx] = if (keepStatus) order.copy(status = existing.status) else order
+        } else {
+            current.add(0, order)
+        }
         pendingCount.postValue(current.count { it.status == OrderStatus.PENDING || it.status == OrderStatus.SCANNING })
         orders.postValue(current)
     }

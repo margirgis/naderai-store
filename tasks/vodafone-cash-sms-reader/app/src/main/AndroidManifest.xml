@@ -42,6 +42,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".TestSmsActivity"
+            android:exported="false"
+            android:label="تجربة فحص الرسالة" />
+
         <!-- Foreground service that keeps heartbeat alive in background -->
         <service
             android:name=".SmsMonitorService"

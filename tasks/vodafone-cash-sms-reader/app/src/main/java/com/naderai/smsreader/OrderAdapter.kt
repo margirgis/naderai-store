@@ -75,19 +75,20 @@ class OrderAdapter(
                 binding.orderTxId.visibility = View.GONE
             }
 
-            // حالة الفحص + عداد المحاولات
-            when (order.status) {
-                OrderStatus.SCANNING -> {
-                    binding.orderScanProgress.visibility = View.VISIBLE
-                    val attemptText = if (order.scanAttempt > 0)
-                        "🔍 المحاولة ${order.scanAttempt}/${order.maxAttempts}"
-                    else "🔍 جاري الفحص…"
-                    val countdownText = if (order.nextScanCountdown > 0)
-                        " • التالية بعد ${order.nextScanCountdown}ث"
-                    else ""
-                    binding.orderScanProgress.text = attemptText + countdownText
+            // حالة الفحص + عداد المحاولات (يظهر للطلبات المعلقة وجاري فحصها)
+            if (order.status == OrderStatus.SCANNING || order.status == OrderStatus.PENDING) {
+                binding.orderScanProgress.visibility = View.VISIBLE
+                val remaining = order.maxAttempts - order.scanAttempt
+                val attemptText = when {
+                    order.scanAttempt > 0 -> "🔍 المحاولة ${order.scanAttempt}/${order.maxAttempts} (متبقي $remaining)"
+                    else -> "⏳ في انتظار بدء الفحص…"
                 }
-                else -> binding.orderScanProgress.visibility = View.GONE
+                val countdownText = if (order.nextScanCountdown > 0 && order.status == OrderStatus.SCANNING)
+                    " • التالية بعد ${order.nextScanCountdown}ث"
+                else ""
+                binding.orderScanProgress.text = attemptText + countdownText
+            } else {
+                binding.orderScanProgress.visibility = View.GONE
             }
 
             // أزرار الإجراءات لحالات تحتاج تدخل يدوي

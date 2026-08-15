@@ -342,6 +342,14 @@
                     <TextView android:id="@+id/appVersionValue" android:layout_width="wrap_content"
                         android:layout_height="wrap_content" android:text="1.0.5" android:textSize="12sp"/>
                 </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnOpenTestSms"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="🧪 تجربة فحص رسالة فودافون كاش" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 

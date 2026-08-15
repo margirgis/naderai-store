@@ -24,6 +24,10 @@ class HomeFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         observeState()
         showDeviceInfo()
+
+        binding.btnOpenTestSms.setOnClickListener {
+            startActivity(android.content.Intent(requireContext(), TestSmsActivity::class.java))
+        }
     }
 
     private fun showDeviceInfo() {
@@ -88,7 +92,7 @@ class HomeFragment : Fragment() {
     }
 
     private fun formatTime(ts: Long): String =
-        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(ts))
+        SimpleDateFormat("hh:mm:ss a", Locale("ar")).format(Date(ts))
 
     override fun onDestroyView() {
         super.onDestroyView()

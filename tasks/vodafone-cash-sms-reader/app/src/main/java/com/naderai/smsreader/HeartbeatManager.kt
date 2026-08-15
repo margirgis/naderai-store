@@ -75,11 +75,12 @@ class HeartbeatManager(
             if (success) {
                 android.util.Log.d("HeartbeatManager", "Device registered: $responseBody")
                 AppState.updateRegistrationStatus(true, "مسجل ✓")
-                AppState.addNotification(DeviceNotification(
-                    title = "تم التسجيل بنجاح",
-                    message = "الجهاز مسجل في السيرفر",
-                    type = NotificationType.CONNECTED
-                ))
+                // AppState.addNotification(DeviceNotification(
+                //     title = "تم التسجيل بنجاح",
+                //     message = "الجهاز مسجل في السيرفر",
+                //     type = NotificationType.CONNECTED
+                // ))
+                // نكتفي بتحديث حالة التسجيل بدون إشعار كل مرة
                 // Immediately send first heartbeat after registration
                 sendHeartbeat()
             } else {

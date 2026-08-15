@@ -224,11 +224,16 @@ object TaskScanner {
     }
 
     // Enhanced SMS parser — extracts transaction_id, receiver_wallet, sender_name
+    /**
+     * نسخة عامة من parseSmsBody للاختبار السريع دون قراءة صندوق الرسائل.
+     */
+    fun testParseSms(text: String): ParsedSms = parseSmsBody(text)
+
     private fun parseSmsBody(text: String): ParsedSms {
         // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────
         // "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ 15:54 26-08-13. رقم العملية: 022655099780"
         val officialVFRegex = Regex(
-            """تم استلام مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s+من\s+(0?1[0-9]{9})؛?\s*المسجل\s+بإسم\s+([^\u0600-\u06FF\n]{2,50}?)\s+على\s+رقم\s+محفظتك\s+(0?1[0-9]{9}).*?رقم العملية[:\s]+([\w]+)""",
+            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(\+?0?1[0-9]{9})\s*[:؛]?\s*المسجل\s+بإسم\s+([A-Za-z][A-Za-z0-9\s]{1,40})\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})\s+بتاريخ\s+\d{1,2}:\d{2}\s+\d{2}-\d{2}-\d{2,4}.*?(?:رقم\s+العملية|رقم العملية)[:\s]+([A-Za-z0-9]+)""",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
         val om = officialVFRegex.find(text)
