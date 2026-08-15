@@ -1,0 +1,38 @@
+[
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/activity_main.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/activity_test_sms.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/activity_test_sms.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/item_order.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/item_order.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/activity_login.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/activity_login.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/fragment_settings.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/fragment_settings.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/activity_diagnostics.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/activity_diagnostics.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/activity_permissions.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/activity_permissions.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/fragment_home.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/fragment_home.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-mergeDebugResources-43:/layout/fragment_orders.xml",
+        "source": "com.naderai.smsreader.app-main-46:/layout/fragment_orders.xml"
+    }
+]

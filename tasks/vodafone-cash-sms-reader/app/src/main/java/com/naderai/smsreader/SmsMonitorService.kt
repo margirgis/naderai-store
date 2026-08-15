@@ -133,7 +133,43 @@ processTask(context, task, webhookUrl, secret)
             TaskResultCache.remove(context, task.taskId)
             AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
             processTask(context, task, webhookUrl, secret)
-}
+        }
+
+        @JvmStatic
+        fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
+            if (tasks.isEmpty()) {
+                AppState.pendingTasks.postValue(emptyList())
+                return
+            }
+            android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
+            AppState.pendingTasks.postValue(tasks)
+
+            TaskScanner.taskResultCallback = { task, result ->
+                AppState.onTaskResult(task, result)
+            }
+
+            tasks.forEach { task ->
+                // حماية مزدوجة: تحقق من الحالة النهائية في AppState
+                val existingStatus = AppState.getOrders()
+                    .firstOrNull { it.requestId == task.requestId }?.status
+                if (existingStatus != null && existingStatus in setOf(
+                        OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
+                        OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE)) {
+                    android.util.Log.d("SmsMonitorService",
+                        "handlePendingTasks: skipping terminal order ${task.requestId} ($existingStatus)")
+                    return@forEach
+                }
+                val cached = TaskResultCache.get(context, task.taskId)
+                if (cached != null) {
+                    android.util.Log.d("SmsMonitorService", "Task ${task.taskId} already cached, skipping re-scan")
+                    applyCachedStatus(task.requestId, cached)
+                    resendCachedResult(context, task, cached, webhookUrl, secret)
+                    return@forEach
+                }
+                processTask(context, task, webhookUrl, secret)
+            }
+            serviceInstance?.updateNotification("جاري فحص ${tasks.size} طلب...")
+        }
 
         private fun resendCachedResult(context: Context, task: TaskScanner.Task, cached: TaskResultCache.CachedResult, webhookUrl: String, secret: String) {
             if (!TaskResultCache.shouldRetry(context, task.taskId)) {
@@ -226,42 +262,6 @@ heartbeatManager?.start()
         return START_STICKY
 }
 
-    @JvmStatic
-    fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
-        if (tasks.isEmpty()) {
-            AppState.pendingTasks.postValue(emptyList())
-            return
-        }
-        android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
-        AppState.pendingTasks.postValue(tasks)
-
-        TaskScanner.taskResultCallback = { task, result ->
-            AppState.onTaskResult(task, result)
-        }
-
-        tasks.forEach { task ->
-            // حماية مزدوجة: تحقق من الحالة النهائية في AppState
-            val existingStatus = AppState.getOrders()
-                .firstOrNull { it.requestId == task.requestId }?.status
-            if (existingStatus != null && existingStatus in setOf(
-                    OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
-                    OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE)) {
-                android.util.Log.d("SmsMonitorService",
-                    "handlePendingTasks: skipping terminal order ${task.requestId} ($existingStatus)")
-                return@forEach
-            }
-            val cached = TaskResultCache.get(context, task.taskId)
-            if (cached != null) {
-                android.util.Log.d("SmsMonitorService", "Task ${task.taskId} already cached, skipping re-scan")
-                applyCachedStatus(task.requestId, cached)
-                resendCachedResult(context, task, cached, webhookUrl, secret)
-                return@forEach
-            }
-            processTask(context, task, webhookUrl, secret)
-        }
-        updateNotificationFromStatic("جاري فحص ${tasks.size} طلب...")
-    }
-
     override fun onDestroy() {
         isRunning = false
         serviceInstance = null
@@ -273,10 +273,6 @@ heartbeatManager?.start()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun updateNotificationFromStatic(text: String) {
-        serviceInstance?.updateNotification(text)
-    }
 
     private fun updateNotification(statusText: String) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
