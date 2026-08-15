@@ -41,10 +41,18 @@ object TaskScanner {
         val receiverWallet: String? = null
     )
 
-    fun scanAndReport(context: Context, task: Task, webhookUrl: String, secret: String) {
+    fun scanAndReport(
+        context: Context,
+        task: Task,
+        webhookUrl: String,
+        secret: String,
+        onResult: ((ScanResult, Boolean) -> Unit)? = null
+    ) {
         CoroutineScope(Dispatchers.IO).launch {
             val result = scanInbox(context, task)
-            sendTaskResult(context, task, result, webhookUrl, secret)
+            sendTaskResult(context, task, result, webhookUrl, secret) { success ->
+                onResult?.invoke(result, success)
+            }
         }
     }
 
@@ -129,7 +137,8 @@ object TaskScanner {
         task: Task,
         result: ScanResult,
         webhookUrl: String,
-        secret: String
+        secret: String,
+        onSent: ((Boolean) -> Unit)? = null
     ) {
         val idempotencyKey = "${task.taskId}-${task.requestId}"
         val body = mutableMapOf<String, Any>(
@@ -167,12 +176,13 @@ object TaskScanner {
         WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, msg, _ ->
             Log.d(TAG, "Task result sent: $success — $msg")
             // Notify local observer for UI update
-            taskResultCallback?.invoke(task.taskId, result)
+            taskResultCallback?.invoke(task, result)
+            onSent?.invoke(success)
         }
     }
 
     // Callback for UI updates when a task result is sent
-    var taskResultCallback: ((taskId: String, result: ScanResult) -> Unit)? = null
+    var taskResultCallback: ((task: Task, result: ScanResult) -> Unit)? = null
 
     private fun isVodafoneCashMessage(body: String): Boolean {
         return KEYWORDS.any { body.contains(it, ignoreCase = true) }

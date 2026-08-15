@@ -21,6 +21,86 @@ class SmsMonitorService : Service() {
     private var heartbeatManager: HeartbeatManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
+    companion object {
+        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "naderai_sms_monitor"
+        private const val ACTION_STOP = "STOP_SERVICE"
+
+        /** استدعاء عند استلام رسالة جديدة لفحص الطلبات المعلقة مرة واحدة */
+        @JvmStatic
+        fun onNewSmsReceived(context: Context) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+            val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl) ?: return
+            val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
+            val pending = AppState.pendingTasks.value ?: return
+            if (pending.isEmpty()) return
+
+            TaskScanner.taskResultCallback = { task, result ->
+                AppState.onTaskResult(task, result)
+            }
+
+            pending.forEach { task ->
+                if (TaskResultCache.get(context, task.taskId) != null) return@forEach
+                processTask(context, task, webhookUrl, secret)
+            }
+        }
+
+        private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
+            val cached = TaskResultCache.get(context, task.taskId)
+            if (cached != null) {
+                resendCachedResult(context, task, cached, webhookUrl, secret)
+                return
+            }
+            TaskScanner.scanAndReport(context, task, webhookUrl, secret) { result, success ->
+                TaskResultCache.put(context, task.taskId, result)
+                if (!success) {
+                    TaskResultCache.incrementRetry(context, task.taskId)
+                }
+            }
+        }
+
+        private fun resendCachedResult(context: Context, task: TaskScanner.Task, cached: TaskResultCache.CachedResult, webhookUrl: String, secret: String) {
+            if (!TaskResultCache.shouldRetry(context, task.taskId)) {
+                android.util.Log.d("SmsMonitorService", "Task ${task.taskId} reached max retries, skipping")
+                return
+            }
+            val resultData = cached.resultData?.let {
+                try {
+                    val obj = org.json.JSONObject(it)
+                    mapOf(
+                        "sender_phone" to obj.optString("sender_phone"),
+                        "sender_name" to obj.optString("sender_name"),
+                        "amount" to obj.optDouble("amount", 0.0),
+                        "transaction_id" to obj.optString("transaction_id"),
+                        "receiver_wallet" to obj.optString("receiver_wallet"),
+                        "sms_body" to obj.optString("sms_body"),
+                        "scanned_at" to obj.optString("scanned_at")
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            val body = mutableMapOf<String, Any>(
+                "action" to "task_result",
+                "device_id" to HeartbeatManager.getDeviceId(context),
+                "task_id" to task.taskId,
+                "idempotency_key" to "${task.taskId}-${task.requestId}",
+                "status" to cached.status
+            )
+            if (resultData != null) body["result_data"] = resultData
+            if (!cached.failureReason.isNullOrEmpty()) body["failure_reason"] = cached.failureReason
+
+            WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, _, _ ->
+                if (success) {
+                    TaskResultCache.remove(context, task.taskId)
+                } else {
+                    TaskResultCache.incrementRetry(context, task.taskId)
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -63,19 +143,21 @@ class SmsMonitorService : Service() {
     }
 
     private fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
-        if (tasks.isEmpty()) return
-        android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
-        // Update global state for UI
-        AppState.pendingTasks.postValue(tasks)
-        tasks.forEach { task ->
-            // Set scanner callback so UI gets updated
-            TaskScanner.taskResultCallback = { taskId, result ->
-                AppState.onTaskResult(task, result)
-                // If offline, enqueue for retry
-            }
-            TaskScanner.scanAndReport(context, task, webhookUrl, secret)
+        if (tasks.isEmpty()) {
+            AppState.pendingTasks.postValue(emptyList())
+            return
         }
-        updateNotification("يفحص ${tasks.size} طلب...")
+        android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
+        AppState.pendingTasks.postValue(tasks)
+
+        TaskScanner.taskResultCallback = { task, result ->
+            AppState.onTaskResult(task, result)
+        }
+
+        tasks.forEach { task ->
+            processTask(context, task, webhookUrl, secret)
+        }
+        updateNotification("يتابع ${tasks.size} طلب...")
     }
 
     override fun onDestroy() {
@@ -119,41 +201,21 @@ class SmsMonitorService : Service() {
     }
 
     private fun updateNotification(statusText: String) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(statusText))
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIFICATION_ID, buildNotification(statusText))
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "SMS Monitor Service",
+                "Nader AI SMS Monitor",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "يُبقي التطبيق يعمل في الخلفية لاستقبال رسائل فودافون كاش"
-                setShowBadge(false)
+                description = "يقوم بمراقبة طلبات الشحن وإرسال Heartbeat"
             }
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
-        }
-    }
-
-    companion object {
-        const val CHANNEL_ID = "sms_monitor_channel"
-        const val NOTIFICATION_ID = 1001
-        const val ACTION_STOP = "com.naderai.smsreader.ACTION_STOP"
-
-        fun start(context: Context) {
-            val intent = Intent(context, SmsMonitorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        }
-
-        fun stop(context: Context) {
-            context.stopService(Intent(context, SmsMonitorService::class.java))
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(channel)
         }
     }
 }

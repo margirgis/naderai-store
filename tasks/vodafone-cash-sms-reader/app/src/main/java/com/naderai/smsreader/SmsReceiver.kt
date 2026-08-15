@@ -49,6 +49,9 @@ class SmsReceiver : BroadcastReceiver() {
                 Log.d(TAG, "Webhook result: $success — $msg")
             }
         }
+
+        // فحص الطلبات المعلقة عند استلام رسالة فودافون كاش جديدة
+        SmsMonitorService.onNewSmsReceived(context)
     }
 
     data class ParsedSms(
