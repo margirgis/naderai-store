@@ -11,6 +11,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 class OrdersFragment : Fragment() {
@@ -62,10 +64,11 @@ class OrdersFragment : Fragment() {
                             val client = okhttp3.OkHttpClient.Builder()
                                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                                 .build()
+                            val mediaType = "application/json".toMediaType()
                             val req = okhttp3.Request.Builder()
                                 .url(webhookUrl)
                                 .addHeader("x-device-secret", secret)
-                                .post(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), body.toString()))
+                                .post(body.toString().toRequestBody(mediaType))
                                 .build()
                             val resp = client.newCall(req).execute()
                             val success = resp.isSuccessful
@@ -74,7 +77,7 @@ class OrdersFragment : Fragment() {
                                     AppState.updateOrderStatus(order.requestId, OrderStatus.CONFIRMED)
                                     android.widget.Toast.makeText(requireContext(), "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
-                                    android.widget.Toast.makeText(requireContext(), "فشل التأكيد: ${resp.code()}", android.widget.Toast.LENGTH_LONG).show()
+                                    android.widget.Toast.makeText(requireContext(), "فشل التأكيد: ${resp.code}", android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
                         } catch (e: Exception) {
