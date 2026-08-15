@@ -47,11 +47,7 @@ class OrdersFragment : Fragment() {
                 val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
                 if (webhookUrl.isNotEmpty() && order.taskId != null) {
                     android.widget.Toast.makeText(requireContext(), "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
-<<<<<<< HEAD
-                    val body = mapOf(
-=======
                     val body = mutableMapOf<String, Any>(
->>>>>>> 2936bf1 (fix(v1.1.5): use Webhook Secret (not anon key), fix manual confirm header, sync server)
                         "action" to "task_result",
                         "device_id" to HeartbeatManager.getDeviceId(requireContext()),
                         "task_id" to order.taskId,
@@ -61,18 +57,10 @@ class OrdersFragment : Fragment() {
                             "manual_confirm" to true,
                             "confirmed_by" to "device_admin",
                             "amount" to order.expectedAmount,
-<<<<<<< HEAD
-                            "sender_phone" to order.customerPhone,
-                            "transaction_id" to "manual-${System.currentTimeMillis()}",
-                            "sms_body" to "تم تأكيد الطلب يدوياً من الجهاز"
-                        ),
-                        "failure_reason" to null
-=======
                             "sender_phone" to (order.customerPhone ?: ""),
                             "transaction_id" to "manual-${System.currentTimeMillis()}",
                             "sms_body" to "تم تأكيد الطلب يدوياً من الجهاز"
                         )
->>>>>>> 2936bf1 (fix(v1.1.5): use Webhook Secret (not anon key), fix manual confirm header, sync server)
                     )
                     WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, message, _ ->
                         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
