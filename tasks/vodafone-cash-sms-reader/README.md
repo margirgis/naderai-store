@@ -16,18 +16,21 @@
 ## الإعدادات
 
 1. فتح المشروع في Android Studio.
-2. في `MainActivity.kt` املأ الرابط الافتراضي لـ `wallet-auto-confirm`:
+2. اذهب لأول صفحة (إعدادات) واملأ خانتين الفقط:
 
-```
-https://ccimllgqdxuvymdeikmn.supabase.co/functions/v1/wallet-auto-confirm
-```
+   **Supabase URL:**
+   ```
+   https://ccimllgqdxuvymdeikmn.supabase.co
+   ```
 
-3. الصق `SMS_WEBHOOK_SECRET` من إعدادات موقعك:
+   **Anon Key:**
+   ```
+   eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjaW1sbGdxZHh1dnltZGVpa21uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2ODk3OTQsImV4cCI6MjEwMjI2NTc5NH0.intP2QkhXHswRigBpCYb127yNk3VAfj68rpS_Ujvies
+   ```
 
-```
-UClksE56lc71GmS6RHpfpiwmy9y5G3S25ufATMBBSOw=
-```
-4. انسخ وفعـ الإعدادات.
+3. اضغط **حفظ الإعدادات** ثم **تسجيل الجهاز**.
+4. إذا بقي الاختبار بـ 404 — الصق من الـأول الى أسفل.
+
 5. المالك الهاتف يجب أن يكون مفتوحاً ومتصلاً بالإنترنت.
 
 ## كيفية بناء وتحميل تطبيق Android

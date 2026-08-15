@@ -47,6 +47,11 @@ class MainActivity : AppCompatActivity() {
         if (hasConfig) SmsMonitorService.start(this)
     }
 
+    /** الرابط الكامل لـ Edge Function من رابط Supabase الاساسي */
+    fun getWebhookUrl(): String? = SupabaseConfig.getWebhookUrl(
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_WEBHOOK_URL, null)
+    )
+
     private fun requestAllPermissions() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED)

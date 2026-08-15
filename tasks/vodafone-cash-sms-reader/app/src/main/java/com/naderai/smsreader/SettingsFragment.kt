@@ -32,9 +32,11 @@ class SettingsFragment : Fragment() {
 
     private fun loadConfig() {
         val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0)
+        // المستخدم يدخل رابط Supabase الاساسي فقط — نبني الرابط الكامل لـ Edge Function تلقائياً
         binding.webhookUrlInput.setText(prefs.getString(MainActivity.KEY_WEBHOOK_URL,
-            "https://ccimllgqdxuvymdeikmn.supabase.co/functions/v1/wallet-auto-confirm"))
-        binding.secretInput.setText(prefs.getString(MainActivity.KEY_SECRET, ""))
+            "https://ccimllgqdxuvymdeikmn.supabase.co"))
+        binding.secretInput.setText(prefs.getString(MainActivity.KEY_SECRET,
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjaW1sbGdxZHh1dnltZGVpa21uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2ODk3OTQsImV4cCI6MjEwMjI2NTc5NH0.intP2QkhXHswRigBpCYb127yNk3VAfj68rpS_Ujvies"))
     }
 
     private fun showDeviceStatus() {
@@ -70,23 +72,29 @@ class SettingsFragment : Fragment() {
     }
 
     private fun saveConfig() {
-        val url = binding.webhookUrlInput.text.toString().trim()
+        val rawUrl = binding.webhookUrlInput.text.toString().trim()
         val secret = binding.secretInput.text.toString().trim()
-        if (url.isEmpty() || secret.isEmpty()) {
-            Toast.makeText(requireContext(), "الرابط والسر مطلوبان", Toast.LENGTH_SHORT).show()
+        if (rawUrl.isEmpty() || secret.isEmpty()) {
+            Toast.makeText(requireContext(), "رابط Supabase و Anon Key مطلوبان", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
+        if (webhookUrl.isNullOrEmpty()) {
+            Toast.makeText(requireContext(), "رابط Supabase غير صالح", Toast.LENGTH_SHORT).show()
             return
         }
         requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0).edit()
-            .putString(MainActivity.KEY_WEBHOOK_URL, url)
+            .putString(MainActivity.KEY_WEBHOOK_URL, rawUrl)
             .putString(MainActivity.KEY_SECRET, secret)
             .apply()
-        Toast.makeText(requireContext(), "✓ تم حفظ الإعدادات", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), "✓ تم الاتصال بـ: $webhookUrl", Toast.LENGTH_SHORT).show()
         SmsMonitorService.start(requireContext())
     }
 
     private fun forceRegister() {
         val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0)
-        val url = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)?.trim()
+        val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)?.trim()
+        val url = SupabaseConfig.getWebhookUrl(rawUrl)
         val secret = prefs.getString(MainActivity.KEY_SECRET, null)?.trim()
         if (url.isNullOrEmpty() || secret.isNullOrEmpty()) {
             Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()
@@ -107,7 +115,8 @@ class SettingsFragment : Fragment() {
 
     private fun testConnection() {
         val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, 0)
-        val url = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)?.trim()
+        val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)?.trim()
+        val url = SupabaseConfig.getWebhookUrl(rawUrl)
         val secret = prefs.getString(MainActivity.KEY_SECRET, null)?.trim()
         if (url.isNullOrEmpty() || secret.isNullOrEmpty()) {
             Toast.makeText(requireContext(), "احفظ الإعدادات أولاً", Toast.LENGTH_SHORT).show()

@@ -37,7 +37,8 @@ class SmsMonitorService : Service() {
         }
 
         val prefs = getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-        val webhookUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+        val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+        val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
         val secret = prefs.getString(MainActivity.KEY_SECRET, null)
 
         if (!webhookUrl.isNullOrEmpty() && !secret.isNullOrEmpty()) {
