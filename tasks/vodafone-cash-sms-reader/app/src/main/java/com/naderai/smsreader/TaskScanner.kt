@@ -26,9 +26,22 @@ object TaskScanner {
     )
 
     // الشروط اللازمة لاعتبار الرسالة رسالة فودافون كاش رسمية
+    // الرسالة لازم تحتوي على مؤشر فودافون + إنها رسالة "استلام" (مش "تحويل" صادر)
     private val MANDATORY_KEYWORDS = listOf(
-        "فودافون كاش",
-        "vodafone cash"
+        "فودافون",
+        "vodafone",
+        "vfcash"
+    )
+    private val RECEIVED_KEYWORDS = listOf(
+        "تم استلام",
+        "استلام",
+        "استلمت",
+        "لقد استلمت"
+    )
+    private val OUTGOING_KEYWORDS = listOf(
+        "تم تحويل",
+        "تحويل",
+        "تم سحب"
     )
 
     data class Task(
@@ -148,8 +161,10 @@ object TaskScanner {
                     val requested = normalizeEgyptianPhone(task.senderPhoneRequested ?: "")
                     val amount = parsed.amount
 
-                    val amountMatch = if (task.fingerprintAmount != null && amount != null) {
-                        kotlin.math.abs(task.fingerprintAmount - amount) <= 0.01
+                    // المبلغ المطلوب: fingerprintAmount لو موجود، وإلا amountRequested
+                    val targetAmount = task.fingerprintAmount ?: task.amountRequested
+                    val amountMatch = if (targetAmount > 0 && amount != null) {
+                        kotlin.math.abs(targetAmount - amount) <= 0.01
                     } else false
 
                     val phoneMatch = requested.isNotEmpty() && normalized == requested
@@ -252,16 +267,24 @@ object TaskScanner {
     }
 
     /**
-     * التحقق من أن الرسالة فودافون كاش رسمية: لازم تحتوي على كلمات "فودافون كاش"
-     * بالإضافة لكلمات مثل "استلام" أو "جنيه" أو "رقم العملية".
+     * التحقق من أن الرسالة رسالة فودافون كاش رسمية "استلام" (received).
+     * لازم تحتوي على مؤشر فودافون، وعبارة استلام، وتحتوي على مبلغ ورقم عملية.
+     * رسائل "تم تحويل" (صادرة) مرفوضة لأنها مش تأكيد دفع وارد.
      */
     fun isOfficialVodafoneCashMessage(body: String): Boolean {
         if (MANDATORY_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
-        val hasAmount = Regex("""(?:تم\s+استلام|استلام|مبلغ|استلمت)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|egp)""", RegexOption.IGNORE_CASE)
-            .find(body) != null
-        val hasTransaction = Regex("""(?:رقم\s+العملية|رقم العملية|transaction|كود\s+المعاملة)""", RegexOption.IGNORE_CASE)
-            .find(body) != null
-        return hasAmount || hasTransaction
+        if (RECEIVED_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
+        if (OUTGOING_KEYWORDS.any { body.contains(it, ignoreCase = true) }) return false
+
+        val hasAmount = Regex(
+            """(?:تم\s+استلام(?:\s+مبلغ)?|استلام(?:\s+مبلغ)?|استلمت(?:\s+مبلغ)?|مبلغ)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|egp)""",
+            RegexOption.IGNORE_CASE
+        ).find(body) != null
+        val hasTransaction = Regex(
+            """(?:رقم\s+العملية|رقم العملية|transaction|كود\s+المعاملة)[:\s]+([A-Za-z0-9]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(body) != null
+        return hasAmount && hasTransaction
     }
 
     /**
@@ -309,7 +332,7 @@ object TaskScanner {
         // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────
         // "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ 15:54 26-08-13. رقم العملية: 022655099780"
         val officialVFRegex = Regex(
-            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(\+?0?1[0-9]{9})\s*[:؛]?\s*المسجل\s+بإسم\s+([A-Za-z][A-Za-z0-9\s]{1,40})\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})\s+بتاريخ\s+\d{1,2}:\d{2}\s+\d{2}-\d{2}-\d{2,4}.*?(?:رقم\s+العملية|رقم العملية)[:\s]+([A-Za-z0-9]+)""",
+            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})\s*[:؛.]?\s*المسجل\s+بإسم\s+([A-Za-z][A-Za-z0-9\s]{1,40})\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})\s+.*?\s*(?:بتاريخ|تاريخ العملية[:\s]+)\d{1,2}:\d{2}\s+\d{2}-\d{2}-\d{2,4}.*?(?:رقم\s+العملية|رقم العملية)[:\s]+([A-Za-z0-9]+)""",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
         val om = officialVFRegex.find(text)

@@ -21,14 +21,9 @@ class SmsReceiver : BroadcastReceiver() {
             val body = sms.messageBody ?: continue
             val sender = sms.displayOriginatingAddress ?: "unknown"
 
-            // Only forward Vodafone Cash messages (Arabic or English)
-            val keywords = listOf(
-                "فودافون كاش", "vodafone cash", "استلمت", "لقد استلمت",
-                "تم استلام", "received egp", "you have received", "تحويل", "مبلغ"
-            )
-            val isPayment = keywords.any { body.contains(it, ignoreCase = true) }
-            if (!isPayment) {
-                Log.d(TAG, "Ignored non-payment SMS from $sender")
+            // Only forward received Vodafone Cash messages (not outgoing transfers)
+            if (!TaskScanner.isOfficialVodafoneCashMessage(body)) {
+                Log.d(TAG, "Ignored non-official/received SMS from $sender")
                 continue
             }
 
