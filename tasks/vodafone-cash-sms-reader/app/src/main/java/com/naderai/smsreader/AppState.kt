@@ -34,6 +34,9 @@ object AppState {
     val notifications = MutableLiveData<List<DeviceNotification>>(emptyList())
     val unreadNotificationCount = MutableLiveData(0)
 
+    // مجموعة لمنع تكرار الإشعارات لنفس الطلب
+    private val notifiedTaskIds = mutableSetOf<String>()
+
     fun updateFromHeartbeat(connected: Boolean, message: String) {
         isConnected.postValue(connected)
         connectionMessage.postValue(message)
@@ -48,9 +51,15 @@ object AppState {
     }
 
     fun addNotification(notification: DeviceNotification) {
+        // منع تكرار إشعار نفس الطلب — فقط إذا كان referenceId جديد
+        val refId = notification.referenceId
+        if (refId != null && notification.type == NotificationType.ORDER_NEW) {
+            if (notifiedTaskIds.contains(refId)) return
+            notifiedTaskIds.add(refId)
+        }
         val current = notifications.value?.toMutableList() ?: mutableListOf()
         current.add(0, notification)
-        // Keep max 100
+        // الاحتفاظ بآخر 100 إشعار فقط
         if (current.size > 100) current.removeAt(current.size - 1)
         notifications.postValue(current)
         val unread = current.count { !it.isRead }
@@ -119,6 +128,22 @@ object AppState {
         }
     }
 
+    /** تحديث عداد المحاولات والعداد التنازلي في كارت الطلب */
+    fun updateOrderScanProgress(requestId: String, attempt: Int, maxAttempts: Int, countdown: Int) {
+        val current = orders.value?.toMutableList() ?: return
+        val idx = current.indexOfFirst { it.requestId == requestId }
+        if (idx >= 0) {
+            current[idx] = current[idx].copy(
+                status = OrderStatus.SCANNING,
+                scanAttempt = attempt,
+                maxAttempts = maxAttempts,
+                nextScanCountdown = countdown,
+                updatedAt = System.currentTimeMillis()
+            )
+            orders.postValue(current)
+        }
+    }
+
     fun addOrUpdateOrder(order: OrderItem) {
         val current = orders.value?.toMutableList() ?: mutableListOf()
         val idx = current.indexOfFirst { it.requestId == order.requestId }
@@ -182,5 +207,9 @@ data class OrderItem(
     val customerPhone: String? = null,
     val paymentMethod: String? = null,
     // مرجع للمهمة للعمليات اليدوية
-    val taskId: String? = null
+    val taskId: String? = null,
+    // عداد المحاولات
+    val scanAttempt: Int = 0,
+    val maxAttempts: Int = 3,
+    val nextScanCountdown: Int = 0   // ثواني حتى المحاولة القادمة
 )

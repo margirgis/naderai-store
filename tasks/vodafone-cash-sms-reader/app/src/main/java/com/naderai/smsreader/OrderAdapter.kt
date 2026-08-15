@@ -75,11 +75,17 @@ class OrderAdapter(
                 binding.orderTxId.visibility = View.GONE
             }
 
-            // حالة الفحص
+            // حالة الفحص + عداد المحاولات
             when (order.status) {
                 OrderStatus.SCANNING -> {
                     binding.orderScanProgress.visibility = View.VISIBLE
-                    binding.orderScanProgress.text = "🔍 جاري الفحص…"
+                    val attemptText = if (order.scanAttempt > 0)
+                        "🔍 المحاولة ${order.scanAttempt}/${order.maxAttempts}"
+                    else "🔍 جاري الفحص…"
+                    val countdownText = if (order.nextScanCountdown > 0)
+                        " • التالية بعد ${order.nextScanCountdown}ث"
+                    else ""
+                    binding.orderScanProgress.text = attemptText + countdownText
                 }
                 else -> binding.orderScanProgress.visibility = View.GONE
             }
@@ -102,5 +108,5 @@ class OrderAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
 
     private fun formatTime(ts: Long): String =
-        SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(ts))
+        SimpleDateFormat("dd/MM hh:mm a", Locale("ar")).format(Date(ts))
 }

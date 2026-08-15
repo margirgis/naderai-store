@@ -191,9 +191,10 @@ class HeartbeatManager(
                 val customerInfo = obj.optString("customer_phone").takeIf { it.isNotEmpty() }
                     ?: obj.optString("customer_email").takeIf { it.isNotEmpty() }
                     ?: "غير معروف"
+                val timeStr = java.text.SimpleDateFormat("hh:mm a", java.util.Locale("ar")).format(java.util.Date())
                 AppState.addNotification(DeviceNotification(
                     title = "طلب شحن جديد $orderNum",
-                    message = "${obj.optDouble("amount_requested", 0.0)} جنيه • $customerInfo — جاري البحث",
+                    message = "${obj.optDouble("amount_requested", 0.0)} جنيه • $customerInfo • $timeStr",
                     type = NotificationType.ORDER_NEW,
                     referenceId = obj.getString("request_id")
                 ))

@@ -165,6 +165,12 @@ class SmsMonitorService : Service() {
         }
 
         tasks.forEach { task ->
+            // ✅ تخطي الطلبات التي تم فحصها بالفعل (كاش موجود) — منع التكرار
+            val cached = TaskResultCache.get(context, task.taskId)
+            if (cached != null) {
+                android.util.Log.d("SmsMonitorService", "Task ${task.taskId} already cached, skipping re-scan")
+                return@forEach
+            }
             processTask(context, task, webhookUrl, secret)
         }
         updateNotification("يتابع ${tasks.size} طلب...")

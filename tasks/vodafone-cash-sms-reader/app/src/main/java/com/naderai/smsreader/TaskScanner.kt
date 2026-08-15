@@ -53,6 +53,7 @@ object TaskScanner {
     /**
      * يفحص صندوق الرسائل كل 20 ثانية — حد أقصى 3 مرات (دقيقة واحدة).
      * لو لقى تطابق يبعت النتيجة فوراً. لو انتهت المحاولات يبعت آخر نتيجة.
+     * بيبعث تحديث للـ UI بعدد المحاولة والعداد التنازلي.
      */
     fun scanAndReport(
         context: Context,
@@ -66,18 +67,24 @@ object TaskScanner {
             var lastResult: ScanResult = ScanResult.NotFound("لم يبدأ الفحص")
             while (attempt < MAX_SCAN_ATTEMPTS) {
                 attempt++
+                // تحديث UI: المحاولة الحالية
+                AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
                 Log.d(TAG, "Scan attempt $attempt/${MAX_SCAN_ATTEMPTS} for task ${task.taskId}")
                 lastResult = scanInbox(context, task)
-                if (lastResult is ScanResult.Success) {
-                    // تطابق — نبعت النتيجة فوراً
-                    break
-                }
+                if (lastResult is ScanResult.Success) break
+
                 if (attempt < MAX_SCAN_ATTEMPTS) {
-                    // ننتظر 20 ثانية قبل المحاولة القادمة
-                    kotlinx.coroutines.delay(SCAN_INTERVAL_MS)
+                    // عداد تنازلي 20 ثانية مع تحديث UI كل ثانية
+                    var remaining = (SCAN_INTERVAL_MS / 1000).toInt()
+                    while (remaining > 0) {
+                        AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, remaining)
+                        kotlinx.coroutines.delay(1_000L)
+                        remaining--
+                    }
                 }
             }
-            // بعد انتهاء المحاولات أو عند التطابق: نبعت النتيجة النهائية
+            // إرسال النتيجة النهائية مرة واحدة فقط
+            AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
             sendTaskResult(context, task, lastResult, webhookUrl, secret) { success ->
                 onResult?.invoke(lastResult, success)
             }
@@ -218,9 +225,29 @@ object TaskScanner {
 
     // Enhanced SMS parser — extracts transaction_id, receiver_wallet, sender_name
     private fun parseSmsBody(text: String): ParsedSms {
+        // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────
+        // "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ 15:54 26-08-13. رقم العملية: 022655099780"
+        val officialVFRegex = Regex(
+            """تم استلام مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s+من\s+(0?1[0-9]{9})؛?\s*المسجل\s+بإسم\s+([^\u0600-\u06FF\n]{2,50}?)\s+على\s+رقم\s+محفظتك\s+(0?1[0-9]{9}).*?رقم العملية[:\s]+([\w]+)""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val om = officialVFRegex.find(text)
+        if (om != null) {
+            return ParsedSms(
+                senderPhone  = om.groupValues[2].trim(),
+                senderName   = om.groupValues[3].trim(),
+                amount       = om.groupValues[1].replace(",", "").toDoubleOrNull(),
+                transactionId= om.groupValues[5].trim(),
+                body         = text,
+                date         = System.currentTimeMillis(),
+                receiverWallet = om.groupValues[4].trim()
+            )
+        }
+
+        // ── fallback: باقي أنماط فودافون كاش ────────────────────────────────
         val amountRegexes = listOf(
+            Regex("تم استلام مبلغ\\s*([\\d,]+\\.?\\d{0,2})\\s*جنيه"),
             Regex("مبلغ\\s*([\\d,]+\\.?\\d{0,2})\\s*جنيه"),
-            Regex("تم استلام مبلغ\\s*([\\d,]+\\.?\\d{0,2})"),
             Regex("استلمت\\s+(?:من\\s+.+?\\s+)?مبلغ\\s*([\\d,]+\\.?\\d{0,2})"),
             Regex("received\\s+(?:egp\\s+)?([\\d,]+\\.?\\d{0,2})", RegexOption.IGNORE_CASE),
             Regex("egp\\s+([\\d,]+\\.?\\d{0,2})", RegexOption.IGNORE_CASE),
