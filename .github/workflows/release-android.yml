@@ -39,27 +39,15 @@ jobs:
       - name: Build Release APK
         run: gradle :app:assembleRelease
 
-      - name: Sign Release APK
-        working-directory: tasks/vodafone-cash-sms-reader
-        run: |
-          BUILD_TOOLS=$(ls -1 ${ANDROID_SDK_ROOT}/build-tools | sort -V | tail -n 1)
-          ${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner sign \
-            --ks signing/release.keystore \
-            --ks-key-alias naderai \
-            --ks-pass pass:naderai2024 \
-            --key-pass pass:naderai2024 \
-            --out app/build/outputs/apk/release/app-release-signed.apk \
-            app/build/outputs/apk/release/app-release-unsigned.apk
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: naderai-sms-reader-release
-          path: tasks/vodafone-cash-sms-reader/app/build/outputs/apk/release/app-release-signed.apk
+          path: tasks/vodafone-cash-sms-reader/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: Rename APK
-        run: mv app/build/outputs/apk/release/app-release-signed.apk "naderai-sms-reader-v${{ github.event.inputs.version }}.apk"
+        run: mv app/build/outputs/apk/release/app-release.apk "naderai-sms-reader-v${{ github.event.inputs.version }}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
