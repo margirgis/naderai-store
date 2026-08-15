@@ -44,7 +44,7 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Anon Key"
+                    android:hint="Webhook Secret"
                     style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                     app:endIconMode="password_toggle"
                     android:layout_marginTop="10dp">
@@ -54,6 +54,14 @@
                         android:layout_height="wrap_content"
                         android:inputType="textPassword" />
                 </com.google.android.material.textfield.TextInputLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="ℹ️ Webhook Secret بيجي من إعدادات Edge Function في Supabase (مش Anon Key)."
+                    android:textSize="12sp"
+                    android:alpha="0.7" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/saveButton"
