@@ -1,0 +1,20 @@
+Nader AI SMS Reader - v1.0.6
+=============================
+
+احفظ كل قيمة في الحقل المناسب في صفحة "الإعدادات" بالتطبيق.
+
+--- الحقل الأول: Supabase URL ---
+https://ccimllgqdxuvymdeikmn.supabase.co
+
+--- الحقل الثاني: Anon Key ---
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjaW1sbGdxZHh1dnltZGVpa21uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2ODk3OTQsImV4cCI6MjEwMjI2NTc5NH0.intP2QkhXHswRigBpCYb127yNk3VAfj68rpS_Ujvies
+
+--- خطوات التفعيل ---
+1. افتح صفحة الإعدادات في التطبيق.
+2. امسح كل قيمة قديمة في الحقلين (اضغط على X في الكيبورد).
+3. الصق الرابط الأول في حقل Supabase URL.
+4. الصق المفتاح الثاني في حقل Anon Key.
+5. اضغط "حفظ الإعدادات" ثم "تسجيل الجهاز".
+6. يجب أن تظهر حالة الاتصال: متصل.
+
+ملاحظة: لا تضيف مسافات أو أسطر جديدة بعد لصق القيم.
