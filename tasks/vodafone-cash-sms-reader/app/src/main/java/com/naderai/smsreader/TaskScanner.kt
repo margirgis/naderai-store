@@ -213,7 +213,7 @@ object TaskScanner {
         return ScanResult.NotFound("تم العثور على ${candidates.size} رسالة لكن لا توجد مطابقة تامة")
     }
 
-    private fun sendTaskResult(
+    fun sendTaskResult(
         context: Context,
         task: Task,
         result: ScanResult,
@@ -222,17 +222,40 @@ object TaskScanner {
         onSent: ((Boolean) -> Unit)? = null
     ) {
         val idempotencyKey = "${task.taskId}-${task.requestId}"
+        val resultStatus = when (result) {
+            is ScanResult.Success -> "success"
+            is ScanResult.AmountMismatch -> "amount_mismatch"
+            is ScanResult.NotFound -> "not_found"
+            is ScanResult.Failure -> "failure"
+        }
+
+        // إذا كان هناك جلسة أدمن، نرسل النتيجة عبر endpoint الأدمن بدون Webhook Secret
+        if (AdminSession.isLoggedIn(context)) {
+            val adminUrl = SupabaseConfig.getAdminTaskResultUrl(
+                context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+                    .getString(MainActivity.KEY_WEBHOOK_URL, null)
+            )
+            if (!adminUrl.isNullOrEmpty()) {
+                sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus) { success ->
+                    onSent?.invoke(success)
+                }
+                return
+            }
+        }
+
+        if (webhookUrl.isEmpty() || secret.isEmpty()) {
+            Log.w(TAG, "No webhook or admin config available; cannot send task result")
+            taskResultCallback?.invoke(task, result)
+            onSent?.invoke(false)
+            return
+        }
+
         val body = mutableMapOf<String, Any>(
             "action" to "task_result",
             "device_id" to HeartbeatManager.getDeviceId(context),
             "task_id" to task.taskId,
             "idempotency_key" to idempotencyKey,
-            "status" to when (result) {
-                is ScanResult.Success -> "success"
-                is ScanResult.AmountMismatch -> "amount_mismatch"
-                is ScanResult.NotFound -> "not_found"
-                is ScanResult.Failure -> "failure"
-            }
+            "status" to resultStatus
         )
 
         if (result is ScanResult.Success) {
@@ -267,6 +290,193 @@ object TaskScanner {
             // Notify local observer for UI update
             taskResultCallback?.invoke(task, result)
             onSent?.invoke(success)
+        }
+    }
+
+    private fun sendAdminTaskResult(
+        context: Context,
+        adminUrl: String,
+        task: Task,
+        result: ScanResult,
+        idempotencyKey: String,
+        resultStatus: String,
+        onSent: ((Boolean) -> Unit)? = null
+    ) {
+        val accessToken = AdminSession.accessToken(context) ?: return
+        val refreshToken = AdminSession.refreshToken(context)
+
+        val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+
+        val resultData = when (result) {
+            is ScanResult.Success -> {
+                val m = result.message
+                mapOf(
+                    "sender_phone"     to (m.senderPhone ?: ""),
+                    "sender_name"      to (m.senderName ?: ""),
+                    "amount"           to (m.amount ?: 0.0),
+                    "transaction_id"   to (m.transactionId ?: ""),
+                    "transaction_time" to isoFmt.format(Date(m.date)),
+                    "receiver_wallet"  to (m.receiverWallet ?: ""),
+                    "sms_body"         to m.body,
+                    "scanned_at"       to isoFmt.format(Date())
+                )
+            }
+            is ScanResult.AmountMismatch -> {
+                val m = result.message
+                mapOf(
+                    "sender_phone"     to (m.senderPhone ?: ""),
+                    "amount"           to (m.amount ?: 0.0),
+                    "expected_amount"  to result.expectedAmount,
+                    "found_amount"     to result.foundAmount,
+                    "scanned_at"       to isoFmt.format(Date())
+                )
+            }
+            is ScanResult.NotFound -> {
+                mapOf(
+                    "reason" to result.reason,
+                    "scanned_at" to isoFmt.format(Date())
+                )
+            }
+            is ScanResult.Failure -> {
+                mapOf(
+                    "reason" to result.reason,
+                    "scanned_at" to isoFmt.format(Date())
+                )
+            }
+        }
+
+        val failureReason = when (result) {
+            is ScanResult.Failure -> result.reason
+            is ScanResult.NotFound -> result.reason
+            is ScanResult.AmountMismatch -> "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
+            else -> null
+        }
+
+        val body = mutableMapOf<String, Any>(
+            "device_id" to HeartbeatManager.getDeviceId(context),
+            "access_token" to accessToken,
+            "refresh_token" to (refreshToken ?: ""),
+            "task_id" to task.taskId,
+            "request_id" to task.requestId,
+            "status" to resultStatus,
+            "idempotency_key" to idempotencyKey
+        )
+
+        body["result_data"] = resultData
+        if (!failureReason.isNullOrEmpty()) body["failure_reason"] = failureReason
+        if (!task.paymentOrderId.isNullOrEmpty()) body["payment_order_id"] = task.paymentOrderId
+        if (!task.orderExpiresAt.isNullOrEmpty()) body["order_expires_at"] = task.orderExpiresAt
+
+        WebhookSender.sendAdminTaskResult(adminUrl, body) { success, msg, responseBody ->
+            Log.d(TAG, "Admin task result sent: $success — $msg")
+            if (success) {
+                try {
+                    val obj = org.json.JSONObject(responseBody)
+                    val tokens = obj.optJSONObject("tokens")
+                    if (tokens != null) {
+                        val newAccess = tokens.optString("access_token")
+                        val newRefresh = tokens.optString("refresh_token")
+                        val expiresAt = tokens.optLong("expires_at", 0L)
+                        if (newAccess.isNotEmpty()) {
+                            AdminSession.updateTokens(context, newAccess, newRefresh, expiresAt)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to parse refreshed tokens: ${e.message}")
+                }
+            }
+            taskResultCallback?.invoke(task, result)
+            onSent?.invoke(success)
+        }
+    }
+
+    /**
+     * يعيد إرسال نتيجة محفوظة محلياً (من TaskResultCache) للسيرفر.
+     * يستخدم endpoint الأدمن إذا كانت الجلسة نشطة، وإلا يستخدم Webhook.
+     */
+    fun resendCachedResult(
+        context: Context,
+        task: Task,
+        cached: TaskResultCache.CachedResult,
+        webhookUrl: String,
+        secret: String
+    ) {
+        val resultData = cached.resultData?.let {
+            try {
+                val obj = org.json.JSONObject(it)
+                mapOf(
+                    "sender_phone"     to obj.optString("sender_phone"),
+                    "sender_name"      to obj.optString("sender_name"),
+                    "amount"           to obj.optDouble("amount", 0.0),
+                    "transaction_id"   to obj.optString("transaction_id"),
+                    "transaction_time" to obj.optString("transaction_time"),
+                    "receiver_wallet"  to obj.optString("receiver_wallet"),
+                    "sms_body"         to obj.optString("sms_body"),
+                    "scanned_at"       to obj.optString("scanned_at")
+                )
+            } catch (e: Exception) { null }
+        }
+
+        val result = when (cached.status) {
+            "success" -> resultData?.let {
+                ScanResult.Success(
+                    ScannedMessage(
+                        sender = it["sender_phone"] as? String ?: "",
+                        senderPhone = it["sender_phone"] as? String,
+                        senderName = it["sender_name"] as? String,
+                        amount = it["amount"] as? Double,
+                        transactionId = it["transaction_id"] as? String,
+                        body = it["sms_body"] as? String ?: "",
+                        date = parseIsoToMillis(it["scanned_at"] as? String),
+                        amountMatch = true,
+                        phoneMatch = true,
+                        score = 100,
+                        receiverWallet = it["receiver_wallet"] as? String
+                    )
+                )
+            } ?: ScanResult.NotFound(cached.failureReason ?: "no cached data")
+            "amount_mismatch" -> {
+                val obj = cached.resultData?.let { try { org.json.JSONObject(it) } catch (e: Exception) { null } }
+                val foundAmount = obj?.optDouble("found_amount", 0.0) ?: 0.0
+                val expectedAmount = obj?.optDouble("expected_amount", 0.0) ?: 0.0
+                val senderPhone = obj?.optString("sender_phone")
+                ScanResult.AmountMismatch(
+                    ScannedMessage(
+                        sender = senderPhone ?: "",
+                        senderPhone = senderPhone,
+                        senderName = null,
+                        amount = foundAmount,
+                        transactionId = null,
+                        body = "",
+                        date = System.currentTimeMillis(),
+                        amountMatch = false,
+                        phoneMatch = false,
+                        score = 0
+                    ),
+                    expectedAmount = expectedAmount,
+                    foundAmount = foundAmount
+                )
+            }
+            "not_found" -> ScanResult.NotFound(cached.failureReason ?: "لم يتم العثور")
+            else -> ScanResult.Failure(cached.failureReason ?: "خطأ تقني")
+        }
+
+        sendTaskResult(context, task, result, webhookUrl, secret) { success ->
+            if (success) {
+                TaskResultCache.remove(context, task.taskId)
+            } else {
+                TaskResultCache.incrementRetry(context, task.taskId)
+            }
+        }
+    }
+
+    private fun parseIsoToMillis(iso: String?): Long {
+        return try {
+            java.time.Instant.parse(iso).toEpochMilli()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
         }
     }
 
@@ -338,7 +548,7 @@ object TaskScanner {
             val amountMatch = targetAmount > 0 && sms.amount != null && kotlin.math.abs(sms.amount - targetAmount) <= 0.01
             val phoneMatch = targetPhone.isNotEmpty() && smsPhone == targetPhone
             amountMatch && phoneMatch
-        }.sortedBy { kotlin.math.abs((it.date ?: 0) - target.date) }
+        }.sortedBy { kotlin.math.abs(it.date - target.date) }
     }
 
     // Enhanced SMS parser — extracts transaction_id, receiver_wallet, sender_name

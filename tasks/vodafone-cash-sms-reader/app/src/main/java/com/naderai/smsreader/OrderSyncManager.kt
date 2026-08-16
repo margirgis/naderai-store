@@ -40,8 +40,14 @@ class OrderSyncManager(
 
             val status = OrderStatus.fromString(obj.optString("status"))
             val scanStatus = obj.optString("scan_status")
+            // نفضل عرض scan_status كحالة فعالة إذا كان يوضح نتيجة الفحص
             val effectiveStatus = when {
-                status == OrderStatus.PENDING && scanStatus == "scanning" -> OrderStatus.SCANNING
+                scanStatus == "scanning" -> OrderStatus.SCANNING
+                scanStatus == "success" -> OrderStatus.CONFIRMED
+                scanStatus == "not_found" -> OrderStatus.NOT_FOUND
+                scanStatus == "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
+                scanStatus == "failure" -> OrderStatus.FAILED
+                scanStatus == "duplicate" -> OrderStatus.DUPLICATE
                 else -> status
             }
 
@@ -181,6 +187,11 @@ class OrderSyncManager(
                 val secret = prefs.getString(MainActivity.KEY_SECRET, null)
                 if (!webhookUrl.isNullOrEmpty() && !secret.isNullOrEmpty()) {
                     SmsMonitorService.handlePendingTasks(context, pendingTasks, webhookUrl, secret)
+                } else if (AdminSession.isLoggedIn(context)) {
+                    // لا يوجد Webhook Secret لكن الأدمن مسجل: نفحص باستخدام admin-task-result
+                    SmsMonitorService.handlePendingTasks(context, pendingTasks, "", "")
+                } else {
+                    android.util.Log.w(TAG, "Pending tasks exist but no webhook/admin config; skipping scan")
                 }
             }
 

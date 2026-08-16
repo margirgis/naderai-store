@@ -13,8 +13,8 @@ class SmsReceiver : BroadcastReceiver() {
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
 
         val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-        val webhookUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null) ?: return
-        val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
+        val webhookUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+        val secret = prefs.getString(MainActivity.KEY_SECRET, null)
         val deviceId = HeartbeatManager.getDeviceId(context)
 
         for (sms in messages) {
@@ -30,18 +30,20 @@ class SmsReceiver : BroadcastReceiver() {
             val parsed = parseSmsBody(body)
             Log.d(TAG, "Parsed: phone=${parsed.senderPhone}, name=${parsed.senderName}, amount=${parsed.amount}, txId=${parsed.transactionId}")
 
-            val payload = mapOf(
-                "sender_phone" to (parsed.senderPhone ?: sender),
-                "sender_name" to (parsed.senderName ?: ""),
-                "amount" to (parsed.amount?.toString() ?: ""),
-                "transaction_id" to (parsed.transactionId ?: ""),
-                "message" to body,
-                "received_at" to System.currentTimeMillis().toString(),
-                "device_id" to deviceId
-            )
+            if (!webhookUrl.isNullOrEmpty() && !secret.isNullOrEmpty()) {
+                val payload = mapOf(
+                    "sender_phone" to (parsed.senderPhone ?: sender),
+                    "sender_name" to (parsed.senderName ?: ""),
+                    "amount" to (parsed.amount?.toString() ?: ""),
+                    "transaction_id" to (parsed.transactionId ?: ""),
+                    "message" to body,
+                    "received_at" to System.currentTimeMillis().toString(),
+                    "device_id" to deviceId
+                )
 
-            WebhookSender.send(webhookUrl, secret, payload) { success, msg ->
-                Log.d(TAG, "Webhook result: $success — $msg")
+                WebhookSender.send(webhookUrl, secret, payload) { success, msg ->
+                    Log.d(TAG, "Webhook result: $success — $msg")
+                }
             }
         }
 

@@ -47,8 +47,14 @@ class SmsMonitorService : Service() {
         fun onNewSmsReceived(context: Context) {
             val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
             val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
-            val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl) ?: return
-            val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
+            val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
+            val secret = prefs.getString(MainActivity.KEY_SECRET, null)
+            val adminLoggedIn = AdminSession.isLoggedIn(context)
+
+            if (!adminLoggedIn && (webhookUrl.isNullOrEmpty() || secret.isNullOrEmpty())) {
+                android.util.Log.d("SmsMonitorService", "onNewSmsReceived: no webhook config or admin session")
+                return
+            }
             val pending = AppState.pendingTasks.value ?: return
             if (pending.isEmpty()) return
 
@@ -68,7 +74,7 @@ class SmsMonitorService : Service() {
 return@forEach
 }
 if (TaskResultCache.get(context, task.taskId) != null) return@forEach
-processTask(context, task, webhookUrl, secret)
+processTask(context, task, webhookUrl ?: "", secret ?: "")
 }
 }
 
@@ -87,15 +93,13 @@ processTask(context, task, webhookUrl, secret)
                     if (System.currentTimeMillis() > expiresMs) {
                         android.util.Log.w("SmsMonitorService",
                             "Task ${task.taskId}: order expired at ${task.orderExpiresAt} — rejecting immediately")
-                        val body = mutableMapOf<String, Any>(
-                            "action"         to "task_result",
-                            "device_id"      to HeartbeatManager.getDeviceId(context),
-                            "task_id"        to task.taskId,
-                            "idempotency_key" to "${task.taskId}-${task.requestId}",
-                            "status"         to "failure",
-                            "failure_reason" to "انتهت صلاحية الطلب قبل وصول رسالة SMS"
-                        )
-                        WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { _, _, _ -> }
+                        TaskScanner.sendTaskResult(
+                            context,
+                            task,
+                            TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب قبل وصول رسالة SMS"),
+                            webhookUrl,
+                            secret
+                        ) { _ -> }
                         return
                     }
                 } catch (e: Exception) {
@@ -128,11 +132,15 @@ processTask(context, task, webhookUrl, secret)
         fun forceScanTask(context: Context, task: TaskScanner.Task) {
             val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
             val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
-            val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl) ?: return
-            val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: return
+            val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
+            val secret = prefs.getString(MainActivity.KEY_SECRET, null)
+            if (!AdminSession.isLoggedIn(context) && (webhookUrl.isNullOrEmpty() || secret.isNullOrEmpty())) {
+                android.util.Log.w("SmsMonitorService", "forceScanTask: no webhook or admin session")
+                return
+            }
             TaskResultCache.remove(context, task.taskId)
             AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
-            processTask(context, task, webhookUrl, secret)
+            processTask(context, task, webhookUrl ?: "", secret ?: "")
         }
 
         @JvmStatic
@@ -176,40 +184,7 @@ processTask(context, task, webhookUrl, secret)
                 android.util.Log.d("SmsMonitorService", "Task ${task.taskId} reached max retries, skipping")
                 return
             }
-            val resultData = cached.resultData?.let {
-                try {
-                    val obj = org.json.JSONObject(it)
-                    mapOf(
-                        "sender_phone"     to obj.optString("sender_phone"),
-                        "sender_name"      to obj.optString("sender_name"),
-                        "amount"           to obj.optDouble("amount", 0.0),
-                        "transaction_id"   to obj.optString("transaction_id"),
-                        "transaction_time" to obj.optString("transaction_time"),
-                        "receiver_wallet"  to obj.optString("receiver_wallet"),
-                        "sms_body"         to obj.optString("sms_body"),
-                        "scanned_at"       to obj.optString("scanned_at")
-                    )
-                } catch (e: Exception) { null }
-            }
-            val body = mutableMapOf<String, Any>(
-                "action"          to "task_result",
-                "device_id"       to HeartbeatManager.getDeviceId(context),
-                "task_id"         to task.taskId,
-                "idempotency_key" to "${task.taskId}-${task.requestId}",
-                "status"          to cached.status
-            )
-            if (resultData != null)                   body["result_data"]       = resultData
-            if (!cached.failureReason.isNullOrEmpty()) body["failure_reason"]   = cached.failureReason
-            if (!task.paymentOrderId.isNullOrEmpty())  body["payment_order_id"] = task.paymentOrderId
-            if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
-
-            WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, _, _ ->
-                if (success) {
-                    TaskResultCache.remove(context, task.taskId)
-                } else {
-                    TaskResultCache.incrementRetry(context, task.taskId)
-                }
-            }
+            TaskScanner.resendCachedResult(context, task, cached, webhookUrl, secret)
         }
 }
 
@@ -255,6 +230,8 @@ processTask(context, task, webhookUrl, secret)
 }
 )
 heartbeatManager?.start()
+} else if (AdminSession.isLoggedIn(this)) {
+    updateNotification("متصل كأدمن ✓")
 } else {
     updateNotification("في انتظار الإعدادات...")
 }

@@ -47,9 +47,10 @@ object AdminSession {
     fun isLoggedIn(context: Context): Boolean {
         val prefs = getPrefs(context)
         if (!prefs.getBoolean(KEY_LOGGED_IN, false)) return false
-        val expiresAt = prefs.getLong(KEY_EXPIRES_AT, 0)
-        // نعتبر التوكن صالحاً إذا لم تنتهِ صلاحيته بعد (مع هامش ٦٠ ثانية)
-        return expiresAt == 0L || System.currentTimeMillis() / 1000 < expiresAt - 60
+        // نعتبر الجلسة موجودة إذا كان لدينا access token أو refresh token،
+        // لأن Edge Function يمكنه تجديد التوكن إذا انتهت صلاحيته.
+        return !prefs.getString(KEY_ACCESS_TOKEN, null).isNullOrEmpty() ||
+                !prefs.getString(KEY_REFRESH_TOKEN, null).isNullOrEmpty()
     }
 
     fun accessToken(context: Context): String? = getPrefs(context).getString(KEY_ACCESS_TOKEN, null)

@@ -97,9 +97,10 @@ class MainActivity : AppCompatActivity() {
     private fun startServiceIfConfigured() {
         try {
             val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            val hasConfig = !prefs.getString(KEY_WEBHOOK_URL, null).isNullOrEmpty() &&
+            val hasWebhook = !prefs.getString(KEY_WEBHOOK_URL, null).isNullOrEmpty() &&
                     !prefs.getString(KEY_SECRET, null).isNullOrEmpty()
-            if (hasConfig) SmsMonitorService.start(this)
+            val adminLoggedIn = AdminSession.isLoggedIn(this)
+            if (hasWebhook || adminLoggedIn) SmsMonitorService.start(this)
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Failed to start service", e)
             AppState.lastError.postValue("فشل تشغيل الخدمة: ${e.message}")

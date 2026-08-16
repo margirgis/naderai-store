@@ -102,4 +102,16 @@ object WebhookSender {
             })
         }
     }
+
+    /**
+     * إرسال نتيجة فحص SMS عبر endpoint الأدمن (لا يحتاج Webhook Secret).
+     * يجب أن يحتوي body على access_token و refresh_token من AdminSession.
+     */
+    fun sendAdminTaskResult(
+        url: String,
+        body: Map<String, Any>,
+        onResult: (success: Boolean, message: String, responseBody: String) -> Unit
+    ) {
+        sendAdminJson(url, body, onResult)
+    }
 }
