@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="صلاحيات التطبيق"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Nader AI SMS Reader محتاج الصلاحيات دي عشان يقدر يقرأ رسائل فودافون كاش ويتابع الطلبات في الخلفية:"
+        android:textSize="14sp"
+        android:alpha="0.8"
+        android:gravity="center"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="• قراءة الرسائل\n• استقبال الرسائل\n• إظهار الإشعارات\n• تشغيل في الخلفية\n• تجاهل تحسين البطارية"
+        android:textSize="14sp"
+        android:layout_marginBottom="24dp"
+        android:padding="16dp"
+        android:background="?attr/colorSurfaceVariant" />
+
+    <Button
+        android:id="@+id/btnGrantPermissions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="منح الصلاحيات" />
+
+</LinearLayout>
