@@ -16,4 +16,13 @@
     <string name="btn_grant">منح الصلاحية</string>
     <string name="btn_continue">متابعة</string>
     <string name="btn_open_settings">فتح الإعدادات</string>
+
+    <string name="invite_title">رابط الدعوة</string>
+    <string name="invite_subtitle">هل لديك رابط دعوة؟ أدخله لتحسب المكافأة لصاحبها، أو تخطَّ لتصفح التطبيق مباشرة.</string>
+    <string name="invite_label">رابط الدعوة</string>
+    <string name="invite_hint">https://medo.dev/?invitecode=...</string>
+    <string name="invite_optional">اختياري — يمكنك تخطي هذه الخطوة</string>
+    <string name="invite_btn_continue">متابعة</string>
+    <string name="invite_btn_skip">تخطي</string>
+    <string name="invite_error_invalid">رابط الدعوة غير صحيح. تأكد من نسخ الرابط كاملاً.</string>
 </resources>

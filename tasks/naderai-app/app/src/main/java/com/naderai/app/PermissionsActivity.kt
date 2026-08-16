@@ -121,7 +121,7 @@ class PermissionsActivity : AppCompatActivity() {
     }
 
     private fun proceed() {
-        startActivity(Intent(this, MainActivity::class.java))
+        startActivity(Intent(this, InviteActivity::class.java))
         finish()
     }
 }

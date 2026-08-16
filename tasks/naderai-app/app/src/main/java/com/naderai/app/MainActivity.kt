@@ -27,13 +27,21 @@ class MainActivity : AppCompatActivity() {
         const val SITE_URL = "https://ccimllgqdxuvymdeikmn.supabase.co"
         // رابط الموقع الفعلي (يُعدَّل حسب الموقع الحالي)
         const val APP_URL = "https://medo.dev/project/app-dpgpkghtekg1"
+
+        // extra key لتمرير رابط دعوة اختياري من InviteActivity
+        const val EXTRA_URL = "extra_url"
     }
+
+    private var startUrl: String = APP_URL
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // إذا جاء رابط دعوة من شاشة الدعوة، نحمله بدلاً من الصفحة الافتراضية
+        startUrl = intent.getStringExtra(EXTRA_URL) ?: APP_URL
 
         setupWebView()
         handleIntent(intent)
@@ -130,7 +138,7 @@ class MainActivity : AppCompatActivity() {
             WebView.setWebContentsDebuggingEnabled(true)
         }
 
-        wv.loadUrl(APP_URL)
+        wv.loadUrl(startUrl)
     }
 
     /** حقن معلومات التطبيق في الصفحة بعد التحميل */
