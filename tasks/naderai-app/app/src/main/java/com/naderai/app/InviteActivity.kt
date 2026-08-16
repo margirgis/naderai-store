@@ -63,11 +63,13 @@ class InviteActivity : AppCompatActivity() {
 
         // مجرد invitecode query string
         if (trimmed.startsWith("?invitecode=")) {
-            return "https://medo.dev/$trimmed"
+            return "${MainActivity.APP_URL}/$trimmed"
         }
 
         // رابط نسبي بدون https
-        if (trimmed.startsWith("medo.dev", ignoreCase = true) ||
+        if (trimmed.startsWith("appmedo.com", ignoreCase = true) ||
+            trimmed.startsWith("www.appmedo.com", ignoreCase = true) ||
+            trimmed.startsWith("medo.dev", ignoreCase = true) ||
             trimmed.startsWith("www.medo.dev", ignoreCase = true)
         ) {
             return "https://$trimmed"
@@ -77,7 +79,8 @@ class InviteActivity : AppCompatActivity() {
     }
 
     private fun isSupportedDomain(url: String): Boolean {
-        return url.contains("medo.dev", ignoreCase = true) ||
+        return url.contains("appmedo.com", ignoreCase = true) ||
+            url.contains("medo.dev", ignoreCase = true) ||
             url.contains("ccimllgqdxuvymdeikmn.supabase.co", ignoreCase = true)
     }
 

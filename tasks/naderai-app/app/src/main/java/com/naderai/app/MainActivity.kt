@@ -23,10 +23,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
 
     companion object {
-        // رابط الموقع الأساسي
+        // رابط الموقع الأساسي (Supabase backend)
         const val SITE_URL = "https://ccimllgqdxuvymdeikmn.supabase.co"
-        // رابط الموقع الفعلي (يُعدَّل حسب الموقع الحالي)
-        const val APP_URL = "https://medo.dev/project/app-dpgpkghtekg1"
+        // رابط الموقع الفعلي (تطبيق Nader AI المباشر)
+        const val APP_URL = "https://g1.appmedo.com"
 
         // extra key لتمرير رابط دعوة اختياري من InviteActivity
         const val EXTRA_URL = "extra_url"
@@ -84,8 +84,8 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
                 return when {
-                    // السماح بنفس الموقع
-                    url.contains("medo.dev") || url.contains("supabase.co") -> false
+                    // السماح بنطاقات التطبيق والـ Supabase
+                    url.contains("appmedo.com") || url.contains("medo.dev") || url.contains("supabase.co") -> false
                     // روابط البريد/الهاتف تفتح خارجياً
                     url.startsWith("mailto:") || url.startsWith("tel:") -> {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
