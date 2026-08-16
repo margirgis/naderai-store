@@ -4,7 +4,11 @@ import {
   Wallet, Loader2, MessageCircle, Clock, CheckCircle2, XCircle,
   AlertCircle, ArrowLeft, Phone, Zap, PackageOpen, Star, Tag,
   ScanLine, AlertTriangle, ShieldAlert, Search, CreditCard, ExternalLink,
+  ChevronDown, ChevronUp, Info,
 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,6 +78,8 @@ export default function CustomerTopupRequestPage() {
   const [selectedPkg, setSelectedPkg] = useState<CreditPackage | null>(null);
   const [activeOrder, setActiveOrder] = useState<PaymentOrderSummary | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(generateIdempotencyKey);
+  const [historyTab, setHistoryTab] = useState<'open' | 'done' | 'all'>('all');
+  const [detailRequest, setDetailRequest] = useState<WalletTopupRequest | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const submittedRef = useRef(false);
 
@@ -414,80 +420,193 @@ export default function CustomerTopupRequestPage() {
 
         {/* السجل */}
         <Card className="bg-card border-border">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold">طلباتي السابقة</CardTitle>
+            {/* Tabs */}
+            <div className="flex gap-1 mt-2 bg-muted/40 rounded-lg p-1">
+              {([
+                { key: 'open',  label: 'مفتوحة' },
+                { key: 'done',  label: 'مكتملة / ملغاة' },
+                { key: 'all',   label: 'الكل' },
+              ] as const).map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setHistoryTab(t.key)}
+                  className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
+                    historyTab === t.key
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {fetching ? (
-              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-            ) : requests.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">لا توجد طلبات سابقة</p>
-            ) : (
-              <div className="divide-y divide-border">
-                {requests.map((r) => {
-                  const scanStatus = (r as any).scan_status as string | undefined;
-                  const displayKey = scanStatus && STATUS_CONFIG[scanStatus]
-                    ? scanStatus
-                    : (STATUS_CONFIG[r.status] ? r.status : 'pending');
-                  const cfg = STATUS_CONFIG[displayKey];
-                  const Icon = cfg.icon;
-                  const cr = (r as any).credits_requested as number | null;
-                  const fp = (r as any).fingerprint_amount as number | null;
-                  const auto = (r as any).matched_automatically as boolean | null;
-                  const failReason = r.failure_reason;
-                  // استخراج payment_order_id من الملاحظات
-                  const notesVal = (r as any).notes as string | null;
-                  const orderIdMatch = notesVal?.match(/payment_order_id:([0-9a-f-]{36})/);
-                  const paymentOrderId = orderIdMatch?.[1] ?? null;
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (() => {
+              const filtered = requests.filter(r => {
+                const terminalStatuses = ['approved', 'rejected', 'failed', 'duplicate', 'not_found', 'amount_mismatch'];
+                const isTerminal = terminalStatuses.includes(r.status);
+                if (historyTab === 'open') return !isTerminal;
+                if (historyTab === 'done') return isTerminal;
+                return true;
+              });
+              if (filtered.length === 0) {
+                return (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    {historyTab === 'open' ? 'لا توجد طلبات مفتوحة' : historyTab === 'done' ? 'لا توجد طلبات مكتملة' : 'لا توجد طلبات سابقة'}
+                  </p>
+                );
+              }
+              return (
+                <div className="divide-y divide-border">
+                  {filtered.map((r) => {
+                    const scanStatus = (r as any).scan_status as string | undefined;
+                    const displayKey = scanStatus && STATUS_CONFIG[scanStatus]
+                      ? scanStatus
+                      : (STATUS_CONFIG[r.status] ? r.status : 'pending');
+                    const cfg = STATUS_CONFIG[displayKey];
+                    const Icon = cfg.icon;
+                    const cr  = (r as any).credits_requested as number | null;
+                    const fp  = (r as any).fingerprint_amount as number | null;
+                    const auto = (r as any).matched_automatically as boolean | null;
+                    const notesVal = (r as any).notes as string | null;
+                    const orderIdMatch = notesVal?.match(/payment_order_id:([0-9a-f-]{36})/);
+                    const paymentOrderId = orderIdMatch?.[1] ?? null;
 
-                  return (
-                    <div key={r.id} className="p-4 flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground">
-                          {cr ? `${cr} Credit` : `${r.amount.toFixed(2)} جنيه`}
-                        </p>
-                        {fp && (
-                          <p className="text-xs text-muted-foreground font-mono" dir="ltr">
-                            المبلغ: {fp.toFixed(2)} جنيه
+                    return (
+                      <div key={r.id} className="p-4 flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground">
+                            {cr ? `${cr} Credit` : `${r.amount.toFixed(2)} جنيه`}
                           </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(r.created_at).toLocaleString('ar-EG')}
-                        </p>
-                        {auto && (
-                          <p className="text-xs text-green-500 flex items-center gap-1 mt-0.5">
-                            <Zap className="w-3 h-3" /> موافقة تلقائية
+                          {fp && (
+                            <p className="text-xs text-muted-foreground font-mono" dir="ltr">
+                              المبلغ: {fp.toFixed(2)} جنيه
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(r.created_at).toLocaleString('ar-EG')}
                           </p>
-                        )}
-                        {failReason && (
-                          <p className="text-xs text-orange-500 mt-1 flex items-start gap-1">
-                            <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                            {failReason}
-                          </p>
-                        )}
-                        {/* رابط إكمال الدفع للطلبات المرتبطة بـ payment_order */}
-                        {paymentOrderId && ['pending', 'scanning'].includes(r.status) && (
+                          {auto && (
+                            <p className="text-xs text-green-500 flex items-center gap-1 mt-0.5">
+                              <Zap className="w-3 h-3" /> موافقة تلقائية
+                            </p>
+                          )}
+                          {paymentOrderId && ['pending', 'scanning'].includes(r.status) && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/store/wallet/payment/${paymentOrderId}`)}
+                              className="text-xs text-primary hover:underline flex items-center gap-1 mt-1"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              إكمال الدفع
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${cfg.colorClass}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                            {cfg.label}
+                          </div>
+                          {/* زر التفاصيل */}
                           <button
                             type="button"
-                            onClick={() => navigate(`/store/wallet/payment/${paymentOrderId}`)}
-                            className="text-xs text-primary hover:underline flex items-center gap-1 mt-1"
+                            onClick={() => setDetailRequest(r)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                           >
-                            <ExternalLink className="w-3 h-3" />
-                            عرض تفاصيل الدفع
+                            <Info className="w-3 h-3" />
+                            تفاصيل
                           </button>
-                        )}
+                        </div>
                       </div>
-                      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${cfg.colorClass}`}>
-                        <Icon className="w-3.5 h-3.5" />
-                        {cfg.label}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
+
+        {/* ── Modal تفاصيل الطلب ── */}
+        <Dialog open={!!detailRequest} onOpenChange={() => setDetailRequest(null)}>
+          <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold">تفاصيل الطلب</DialogTitle>
+            </DialogHeader>
+            {detailRequest && (() => {
+              const r = detailRequest;
+              const scanStatus = (r as any).scan_status as string | undefined;
+              const displayKey = scanStatus && STATUS_CONFIG[scanStatus]
+                ? scanStatus : (STATUS_CONFIG[r.status] ? r.status : 'pending');
+              const cfg = STATUS_CONFIG[displayKey];
+              const Icon = cfg.icon;
+              const cr  = (r as any).credits_requested as number | null;
+              const fp  = (r as any).fingerprint_amount as number | null;
+              const auto = (r as any).matched_automatically as boolean | null;
+              const failReason = r.failure_reason;
+              const notesVal = (r as any).notes as string | null;
+              const orderIdMatch = notesVal?.match(/payment_order_id:([0-9a-f-]{36})/);
+              const paymentOrderId = orderIdMatch?.[1] ?? null;
+
+              const rows: { label: string; value: string; mono?: boolean }[] = [
+                { label: 'رقم الطلب',   value: r.id.slice(0, 8) + '…', mono: true },
+                { label: 'المبلغ',       value: cr ? `${cr} Credit` : `${r.amount.toFixed(2)} جنيه` },
+                ...(fp ? [{ label: 'المبلغ بالقروش', value: `${fp.toFixed(2)} جنيه`, mono: true }] : []),
+                { label: 'الحالة',       value: cfg.label },
+                { label: 'نوع الدفع',   value: 'فودافون كاش' },
+                { label: 'تاريخ الإنشاء', value: new Date(r.created_at).toLocaleString('ar-EG') },
+                ...(auto ? [{ label: 'الموافقة', value: 'تلقائية ⚡' }] : []),
+              ];
+
+              return (
+                <div className="space-y-4">
+                  {/* حالة */}
+                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${cfg.colorClass}`}>
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {cfg.label}
+                  </div>
+
+                  {/* جدول التفاصيل */}
+                  <div className="divide-y divide-border rounded-lg border border-border overflow-hidden text-xs">
+                    {rows.map(({ label, value, mono }) => (
+                      <div key={label} className="flex items-center justify-between px-3 py-2 gap-2">
+                        <span className="text-muted-foreground shrink-0">{label}</span>
+                        <span className={`font-medium text-foreground text-left ${mono ? 'font-mono' : ''}`} dir="ltr">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* سبب الفشل إن وجد */}
+                  {failReason && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <p>{failReason}</p>
+                    </div>
+                  )}
+
+                  {/* رابط إكمال الدفع */}
+                  {paymentOrderId && ['pending', 'scanning'].includes(r.status) && (
+                    <button
+                      type="button"
+                      onClick={() => { setDetailRequest(null); navigate(`/store/wallet/payment/${paymentOrderId}`); }}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      إكمال الدفع
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </div>
     </CustomerLayout>
   );

@@ -38,10 +38,15 @@ object TaskScanner {
         "استلمت",
         "لقد استلمت"
     )
+    // الكلمات التي تدل على رسالة صادرة (ليست استلام) — نطابقها في بداية الرسالة فقط
+    // "تحويل" وحدها ليست كافية لأنها تظهر في رسائل الاستلام الرسمية من فودافون كاش
+    // مثال رسالة رسمية: "تم استلام مبلغ 5.94 جنيه من ... على رقم محفظتك ..."
     private val OUTGOING_KEYWORDS = listOf(
         "تم تحويل",
-        "تحويل",
-        "تم سحب"
+        "تم سحب",
+        "قمت بتحويل",
+        "you have sent",
+        "you transferred"
     )
 
     data class Task(
@@ -235,26 +240,48 @@ object TaskScanner {
         }
 
         // إذا كان هناك جلسة أدمن، نرسل النتيجة عبر endpoint الأدمن بدون Webhook Secret
-        if (AdminSession.isLoggedIn(context)) {
+        // تحقق أن لديك access_token فعلي وليس null — لو null استخدم webhook عادي
+        val accessToken = if (AdminSession.isLoggedIn(context)) AdminSession.accessToken(context) else null
+        if (!accessToken.isNullOrEmpty()) {
             val adminUrl = SupabaseConfig.getAdminTaskResultUrl(
                 context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
                     .getString(MainActivity.KEY_WEBHOOK_URL, null)
             )
             if (!adminUrl.isNullOrEmpty()) {
+                Log.d(TAG, "Sending task result via admin endpoint for task ${task.taskId}")
                 sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus) { success ->
-                    onSent?.invoke(success)
+                    if (!success && webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
+                        // fallback: لو فشل admin endpoint، جرب webhook العادي
+                        Log.w(TAG, "Admin endpoint failed, falling back to webhook for task ${task.taskId}")
+                        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent)
+                    } else {
+                        onSent?.invoke(success)
+                    }
                 }
                 return
             }
         }
 
         if (webhookUrl.isEmpty() || secret.isEmpty()) {
-            Log.w(TAG, "No webhook or admin config available; cannot send task result")
+            Log.w(TAG, "No webhook or admin config available; cannot send task result for ${task.taskId}")
             taskResultCallback?.invoke(task, result)
             onSent?.invoke(false)
             return
         }
 
+        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent)
+    }
+
+    private fun sendViaWebhook(
+        context: Context,
+        task: Task,
+        result: ScanResult,
+        webhookUrl: String,
+        secret: String,
+        resultStatus: String,
+        idempotencyKey: String,
+        onSent: ((Boolean) -> Unit)? = null
+    ) {
         val body = mutableMapOf<String, Any>(
             "action" to "task_result",
             "device_id" to HeartbeatManager.getDeviceId(context),
@@ -282,17 +309,15 @@ object TaskScanner {
             )
         }
 
-        if (result is ScanResult.Failure)      body["failure_reason"] = result.reason
-        if (result is ScanResult.NotFound)     body["failure_reason"] = result.reason
+        if (result is ScanResult.Failure)        body["failure_reason"] = result.reason
+        if (result is ScanResult.NotFound)       body["failure_reason"] = result.reason
         if (result is ScanResult.AmountMismatch) body["failure_reason"] = "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
 
-        // إضافة معرّف طلب الدفع + وقت انتهاء الصلاحية لـ Edge Function لتنفيذ confirm_payment_order
         if (!task.paymentOrderId.isNullOrEmpty()) body["payment_order_id"] = task.paymentOrderId
         if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
 
         WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, msg, _ ->
-            Log.d(TAG, "Task result sent: $success — $msg")
-            // Notify local observer for UI update
+            Log.d(TAG, "Webhook task result sent: $success — $msg")
             taskResultCallback?.invoke(task, result)
             onSent?.invoke(success)
         }
@@ -501,7 +526,10 @@ object TaskScanner {
     fun isOfficialVodafoneCashMessage(body: String): Boolean {
         if (MANDATORY_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
         if (RECEIVED_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
-        if (OUTGOING_KEYWORDS.any { body.contains(it, ignoreCase = true) }) return false
+        // نتحقق من OUTGOING_KEYWORDS فقط في أول 20 حرف من الرسالة
+        // لأن كلمات مثل "تم تحويل" تظهر في رسائل الاستلام الرسمية بعد المبلغ
+        val bodyPrefix = body.trimStart().take(20)
+        if (OUTGOING_KEYWORDS.any { bodyPrefix.contains(it, ignoreCase = true) }) return false
 
         val hasAmount = listOf(
             Regex("""(?:تم\s+استلام(?:\s+مبلغ)?|استلام(?:\s+مبلغ)?|استلمت(?:\s+مبلغ)?|مبلغ)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|ج\.م|egp)""", RegexOption.IGNORE_CASE),

@@ -8,8 +8,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight, Loader2, AlertCircle, CheckCircle2, Clock, Copy,
   Check, Phone, Shield, Banknote, Lock, AlertTriangle, XCircle, Wallet,
-  RefreshCcw, CreditCard,
+  RefreshCcw, CreditCard, Trash2, ChevronDown, ChevronUp,
 } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -104,13 +109,15 @@ export default function PaymentOrderPage() {
   const navigate    = useNavigate();
   const { profile } = useAuth();
 
-  const [order,       setOrder]       = useState<PaymentOrder | null>(null);
-  const [vfNumber,    setVfNumber]    = useState('01097273680');
-  const [loading,     setLoading]     = useState(true);
-  const [submitting,  setSubmitting]  = useState(false);
-  const [senderPhone, setSenderPhone] = useState('');
-  const [senderName,  setSenderName]  = useState('');
-  const [confirmed,   setConfirmed]   = useState(false);
+  const [order,        setOrder]        = useState<PaymentOrder | null>(null);
+  const [vfNumber,     setVfNumber]     = useState('01097273680');
+  const [loading,      setLoading]      = useState(true);
+  const [submitting,   setSubmitting]   = useState(false);
+  const [cancelling,   setCancelling]   = useState(false);
+  const [senderPhone,  setSenderPhone]  = useState('');
+  const [senderName,   setSenderName]   = useState('');
+  const [confirmed,    setConfirmed]    = useState(false);
+  const [showDetails,  setShowDetails]  = useState(false);
   const submittedRef = useRef(false);
   const channelRef   = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -219,6 +226,32 @@ export default function PaymentOrderPage() {
     }
   };
 
+  /* ── إلغاء الطلب ────────────────────────────────────────── */
+  const handleCancel = async () => {
+    if (!order || !orderId) return;
+    setCancelling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-payment-order', {
+        body: { order_id: orderId },
+      });
+      if (error || !data?.ok) {
+        let msg = 'تعذر إلغاء الطلب.';
+        try {
+          const t = await (error as any)?.context?.text?.();
+          if (t) { const j = JSON.parse(t); msg = j.error ?? j.message ?? msg; }
+        } catch { /**/ }
+        toast.error(msg);
+        return;
+      }
+      toast.success('تم إلغاء الطلب بنجاح.');
+      setOrder(prev => prev ? { ...prev, status: 'cancelled' } : null);
+    } catch {
+      toast.error('تعذر الاتصال بالخادم. حاول مرة أخرى.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   /* ── حالات التحميل والأخطاء ──────────────────────────────── */
   if (loading) return (
     <CustomerLayout>
@@ -237,19 +270,55 @@ export default function PaymentOrderPage() {
   const isTerminal = ['confirmed', 'expired', 'cancelled', 'failed', 'duplicate'].includes(order.status);
   const isAwaiting = order.status === 'awaiting_payment';
   const isScanning = order.status === 'scanning';
+  const isCancellable = ['awaiting_payment'].includes(order.status) && !isExpired;
 
   return (
     <CustomerLayout>
       <div className="px-4 md:px-6 py-6 max-w-lg mx-auto space-y-5">
 
-        {/* رجوع */}
-        <button
-          onClick={() => navigate('/store/wallet/topup')}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowRight className="w-4 h-4" />
-          العودة لطلبات الشحن
-        </button>
+        {/* رجوع + إلغاء الطلب */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <button
+            onClick={() => navigate('/store/wallet/topup')}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowRight className="w-4 h-4" />
+            العودة لطلبات الشحن
+          </button>
+
+          {/* زر إلغاء الطلب — يظهر فقط إذا كان الطلب قابلاً للإلغاء */}
+          {isCancellable && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  className="flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80 transition-colors px-3 py-1.5 rounded-lg border border-destructive/30 hover:bg-destructive/5"
+                  disabled={cancelling}
+                >
+                  {cancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  إلغاء الطلب
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="max-w-[calc(100%-2rem)] md:max-w-lg">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>تأكيد إلغاء الطلب</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    هل أنت متأكد من إلغاء طلب رقم <strong>#{order.order_number}</strong>؟
+                    لن تستطيع إنشاء طلب جديد إلا بعد الإلغاء.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>تراجع</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                    onClick={handleCancel}
+                  >
+                    نعم، إلغاء الطلب
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
 
         {/* العنوان */}
         <div className="space-y-0.5">
@@ -507,6 +576,43 @@ export default function PaymentOrderPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* ───── تفاصيل الطلب الكاملة ───── */}
+        <Card className="border-border shadow-sm">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted/30 transition-colors rounded-xl"
+            onClick={() => setShowDetails(v => !v)}
+          >
+            <span className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-muted-foreground" />
+              تفاصيل الطلب
+            </span>
+            {showDetails
+              ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
+              : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          {showDetails && (
+            <CardContent className="pt-0 pb-4 space-y-2">
+              <div className="divide-y divide-border/60 rounded-lg border border-border overflow-hidden text-xs">
+                {[
+                  { label: 'رقم الطلب',     value: `#${order.order_number}` },
+                  { label: 'الحالة',         value: statusUi.label },
+                  { label: 'عدد الكريدات',  value: `${order.credits_qty} Credit` },
+                  { label: 'المبلغ الإجمالي', value: `${amtStr} جنيه` },
+                  { label: 'ينتهي في',      value: new Date(order.expires_at).toLocaleString('ar-EG') },
+                  ...(order.sender_phone ? [{ label: 'رقم المُحوِّل', value: order.sender_phone }] : []),
+                  ...(order.sender_name  ? [{ label: 'اسم المُحوِّل', value: order.sender_name  }] : []),
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between px-3 py-2 gap-2">
+                    <span className="text-muted-foreground shrink-0">{label}</span>
+                    <span className="font-medium text-foreground text-left" dir="ltr">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          )}
+        </Card>
       </div>
     </CustomerLayout>
   );
