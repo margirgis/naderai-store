@@ -1,0 +1,54 @@
+[
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_activity_diagnostics.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/activity_diagnostics.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/drawable_status_online.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/drawable/status_online.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/drawable_badge_bg.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/drawable/badge_bg.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_fragment_settings.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/fragment_settings.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_fragment_home.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/fragment_home.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/drawable_status_offline.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/drawable/status_offline.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/drawable_ic_launcher.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/drawable/ic_launcher.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_item_order.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/item_order.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_activity_test_sms.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/activity_test_sms.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_fragment_orders.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/fragment_orders.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_activity_login.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/activity_login.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_activity_permissions.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/activity_permissions.xml"
+    },
+    {
+        "merged": "com.naderai.smsreader.app-merged_res-44:/layout_activity_main.xml.flat",
+        "source": "com.naderai.smsreader.app-main-45:/layout/activity_main.xml"
+    }
+]

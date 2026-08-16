@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nader AI</string>
+    <string name="sms_test_label">اختبار قراءة الرسائل</string>
+    <string name="channel_name">Nader AI SMS Monitor</string>
+    <string name="channel_desc">يعمل في الخلفية لقراءة رسائل Vodafone Cash وتأكيد الطلبات</string>
+    <string name="notification_title">Nader AI</string>
+    <string name="notification_text">يراقب رسائل Vodafone Cash…</string>
+    <string name="permissions_title">الصلاحيات المطلوبة</string>
+    <string name="permissions_sms">قراءة الرسائل النصية</string>
+    <string name="permissions_sms_desc">للكشف عن تحويلات Vodafone Cash وتأكيد الطلبات تلقائياً</string>
+    <string name="permissions_notifications">إشعارات التطبيق</string>
+    <string name="permissions_notifications_desc">لإعلامك بحالة الطلبات والعمليات</string>
+    <string name="permissions_battery">تجاهل تحسين البطارية</string>
+    <string name="permissions_battery_desc">للحفاظ على عمل التطبيق في الخلفية</string>
+    <string name="btn_grant">منح الصلاحية</string>
+    <string name="btn_continue">متابعة</string>
+    <string name="btn_open_settings">فتح الإعدادات</string>
+</resources>
