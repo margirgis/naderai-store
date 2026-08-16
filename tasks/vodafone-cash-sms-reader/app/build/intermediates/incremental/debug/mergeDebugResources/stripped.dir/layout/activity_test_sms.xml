@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🧪 تجربة فحص رسالة فودافون كاش"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="انسخ رسالة فودافون كاش الحقيقية اللي وصلتك والصقها هنا. التطبيق هيفحصها ويوريك البيانات اللي استخرجها."
+            android:textSize="13sp"
+            android:alpha="0.7"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="الخطوة 1: افحص الصق النص (اختبار الـ Regex)"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="الصق رسالة فودافون كاش هنا"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/smsInput"
+                android:layout_width="match_parent"
+                android:layout_height="140dp"
+                android:gravity="top|start"
+                android:inputType="textMultiLine"
+                android:textSize="14sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/btnPaste"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="لصق" />
+
+            <Button
+                android:id="@+id/btnSample"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="مثال جاهز" />
+
+            <Button
+                android:id="@+id/btnScan"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="افحص النص" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/resultTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="نتيجة فحص النص"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="20dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/resultText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/matchBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="16dp"
+            android:background="?android:attr/dividerVertical" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="الخطوة 2: فحص صندوق الرسائل الحقيقي"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="هنا التطبيق بيدخل على رسائل الجهاز وبيقرا رسائل فودافون كاش اللي موجودة فعلياً."
+            android:textSize="13sp"
+            android:alpha="0.7" />
+
+        <Button
+            android:id="@+id/btnScanInbox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="🔎 ابحث عن الرسالة دي في الجهاز" />
+
+        <Button
+            android:id="@+id/btnListAll"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="📱 عرض كل رسائل فودافون كاش في الجهاز" />
+
+        <TextView
+            android:id="@+id/inboxResultTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="نتيجة البحث في الجهاز"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/inboxResultText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/instructions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="كيف تستخدمه:
+1. افتح رسائل فودافون كاش في الجهاز.
+2. انسخ الرسالة الكاملة (اضغط مطولاً ثم نسخ).
+3. ارجع للتطبيق والصقها في المربع فوق.
+4. اضغط 'افحص النص' للتأكد إن التطبيق بيستخرج البيانات صح.
+5. اضغط '🔎 ابحث عن الرسالة دي في الجهاز' للتأكد إن التطبيق بيلاقي نفس المبلغ والرقم في صندوق الرسائل الحقيقي.
+6. اضغط '📱 عرض كل رسائل فودافون كاش' لو عايز تشوف كل رسائل الاستلام الموجودة في الجهاز.
+
+لو ظهر '✅ تم التطابق' مع المبلغ ورقم المحفظة ورقم العملية — يبقى التطبيق بيقرأ الرسالة صح.
+لو ظهر '❌ لا توجد مطابقة' — ابعت الرسالة لي عشان أعدّل الـ Regex."
+            android:textSize="13sp"
+            android:alpha="0.7" />
+
+    </LinearLayout>
+</ScrollView>
