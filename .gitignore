@@ -36,6 +36,7 @@ history/*.json
 /tasks/*.txt
 /tasks/*/
 !/tasks/vodafone-cash-sms-reader/
+!/tasks/naderai-app/
 .native-wind-cache
 # Secrets
 .env
@@ -50,4 +51,6 @@ historical_context.txt
 /tasks/vodafone-cash-sms-reader/.gradle/
 /tasks/vodafone-cash-sms-reader/app/build/
 /tasks/vodafone-cash-sms-reader/*.log
-/tasks
+/tasks/naderai-app/.gradle/
+/tasks/naderai-app/app/build/
+/tasks/naderai-app/*.log
