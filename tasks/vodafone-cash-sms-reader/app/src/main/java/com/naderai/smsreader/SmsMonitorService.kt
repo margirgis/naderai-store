@@ -37,10 +37,21 @@ class SmsMonitorService : Service() {
             val intent = Intent(context, SmsMonitorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
-    } else {
-        context.startService(intent)
-}
-}
+            } else {
+                context.startService(intent)
+            }
+            NetworkMonitor.start(context.applicationContext)
+        }
+
+        /**
+         * طلب مزامنة فورية من خلال خدمة الـ Heartbeat.
+         */
+        @JvmStatic
+        fun forceSync(context: Context) {
+            start(context)
+            serviceInstance?.heartbeatManager?.forceSync()
+            android.util.Log.d("SmsMonitorService", "forceSync requested")
+        }
 
         /** استدعاء عند استلام رسالة جديدة لفحص الطلبات المعلقة مرة واحدة */
         @JvmStatic
@@ -109,6 +120,7 @@ processTask(context, task, webhookUrl ?: "", secret ?: "")
 
             // تأكيد بداية الفحص في الـ UI
             AppState.updateOrderScanProgress(task.requestId, 1, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
+            OrderEventLogger.scanStarted(task.requestId, task.orderNumber, task.taskId)
             TaskScanner.scanAndReport(context, task, webhookUrl, secret) { result, success ->
                 TaskResultCache.put(context, task.taskId, result)
                 if (!success) {

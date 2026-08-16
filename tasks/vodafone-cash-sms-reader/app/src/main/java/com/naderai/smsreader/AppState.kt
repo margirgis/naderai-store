@@ -153,6 +153,8 @@ object AppState {
                 confirmedCount.postValue((confirmedCount.value ?: 0) + 1)
                 lastFoundTransaction.postValue(result.message.transactionId)
                 updateOrderStatus(task.requestId, OrderStatus.CONFIRMED)
+                OrderEventLogger.matchFound(task.requestId, task.orderNumber, result.message.transactionId)
+                OrderEventLogger.orderConfirmed(task.requestId, task.orderNumber, result.message.transactionId)
                 addNotification(DeviceNotification(
                     title = "تم العثور على العملية ✓",
                     message = "المبلغ: ${result.message.amount} — رقم العملية: ${result.message.transactionId ?: "—"}",
@@ -163,6 +165,7 @@ object AppState {
             is TaskScanner.ScanResult.NotFound -> {
                 notFoundCount.postValue((notFoundCount.value ?: 0) + 1)
                 updateOrderStatus(task.requestId, OrderStatus.NOT_FOUND)
+                OrderEventLogger.orderRejected(task.requestId, task.orderNumber, "not_found: ${result.reason}")
                 addNotification(DeviceNotification(
                     title = "لم يتم العثور على العملية",
                     message = result.reason,
@@ -173,6 +176,7 @@ object AppState {
             is TaskScanner.ScanResult.AmountMismatch -> {
                 failedCount.postValue((failedCount.value ?: 0) + 1)
                 updateOrderStatus(task.requestId, OrderStatus.AMOUNT_MISMATCH)
+                OrderEventLogger.orderRejected(task.requestId, task.orderNumber, "amount_mismatch: expected=${result.expectedAmount} found=${result.foundAmount}")
                 addNotification(DeviceNotification(
                     title = "مبلغ غير مطابق",
                     message = "المطلوب: ${result.expectedAmount} — الموجود: ${result.foundAmount}",
@@ -183,6 +187,7 @@ object AppState {
             is TaskScanner.ScanResult.Failure -> {
                 failedCount.postValue((failedCount.value ?: 0) + 1)
                 updateOrderStatus(task.requestId, OrderStatus.FAILED)
+                OrderEventLogger.orderRejected(task.requestId, task.orderNumber, "failure: ${result.reason}")
                 addNotification(DeviceNotification(
                     title = "فشل الفحص",
                     message = result.reason,

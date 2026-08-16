@@ -38,6 +38,9 @@ class NaderAiApplication : Application() {
             android.util.Log.e("NaderAiApplication", "Failed to load cached orders: ${e.message}")
         }
 
+        // تجهيز السجلات المنظّمة
+        OrderEventLogger.init { HeartbeatManager.getDeviceId(this) }
+
         // حفظ أي تغيير لاحق
         AppState.orders.observeForever(ordersObserver)
     }

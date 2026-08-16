@@ -107,6 +107,7 @@ class LoginActivity : AppCompatActivity() {
                             val refreshToken = json.getString("refresh_token")
                             val expiresAt = json.getLong("expires_at")
                             AdminSession.save(this@LoginActivity, accessToken, refreshToken, expiresAt, email)
+                            SyncTriggers.onLogin(this@LoginActivity)
                             Toast.makeText(this@LoginActivity, "✓ تم تسجيل الدخول", Toast.LENGTH_SHORT).show()
                             goToMain()
                         } catch (e: Exception) {

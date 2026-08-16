@@ -8,8 +8,8 @@ import android.os.Build
 
 class HeartbeatManager(
     private val context: Context,
-    private val webhookUrl: String,
-    private val secret: String,
+    val webhookUrl: String,
+    val secret: String,
     private val onStatusChange: (Boolean, String) -> Unit,
     private val onPendingTasks: (List<TaskScanner.Task>) -> Unit = {}
 ) {
@@ -52,6 +52,14 @@ class HeartbeatManager(
 
     fun stop() {
         handler.removeCallbacks(heartbeatRunnable)
+    }
+
+    /** مزامنة فورية — تُستخدم عند إعادة الاتصال أو بدء التطبيق */
+    fun forceSync() {
+        handler.removeCallbacks(heartbeatRunnable)
+        registerDevice()
+        // بعد التسجيل سيرسل Heartbeat أول مباشرةً
+        handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
     }
 
     /** Explicit device_register call — separate from heartbeat */
@@ -151,7 +159,12 @@ class HeartbeatManager(
             // تسجيل عدد الطلبات التي تم توزيعها حديثاً على هذا الجهاز
             val newlyDispatched = json.optInt("newly_dispatched", 0)
             if (newlyDispatched > 0) {
-                android.util.Log.d("HeartbeatManager", "Server dispatched $newlyDispatched new task(s) to this device")
+                android.util.Log.d("HeartbeatManager", "ORDER_DISPATCHED: $newlyDispatched new task(s) to device=$deviceId")
+            }
+            val reassignedFromOffline = json.optInt("reassigned_from_offline", 0)
+            if (reassignedFromOffline > 0) {
+                android.util.Log.d("HeartbeatManager", "STALE_DEVICE_REASSIGNED: $reassignedFromOffline task(s) reset and dispatched to device=$deviceId")
+                OrderEventLogger.staleDeviceReassigned(reassignedFromOffline, deviceId)
             }
 
             // قراءة المهام المعلقة
@@ -172,6 +185,7 @@ class HeartbeatManager(
                 val taskId = obj.getString("task_id")
                 if (!seenTaskIds.add(taskId)) {
                     android.util.Log.w("HeartbeatManager", "Duplicate task_id in heartbeat: $taskId")
+                    OrderEventLogger.duplicateIgnored(requestId, existingOrder?.orderNumber, taskId)
                     continue
                 }
 
@@ -190,6 +204,7 @@ class HeartbeatManager(
                 if (isTerminal) {
                     android.util.Log.d("HeartbeatManager",
                         "Skipping terminal order $requestId (status=${existingOrder?.status?.name})")
+                    OrderEventLogger.terminalIgnored(requestId, existingOrder?.orderNumber, existingOrder?.status?.name)
                     continue
                 }
 
@@ -213,6 +228,7 @@ class HeartbeatManager(
                 tasks.add(task)
 
                 // تحديث أو إضافة الطلب في AppState — addOrUpdateOrder يحمي الحالات النهائية
+                val orderNumber = if (obj.has("order_number") && !obj.isNull("order_number")) obj.getLong("order_number") else null
                 AppState.addOrUpdateOrder(OrderItem(
                     requestId = requestId,
                     orderLabel = "طلب شحن",
@@ -220,13 +236,15 @@ class HeartbeatManager(
                     status = OrderStatus.PENDING,
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis(),
-                    orderNumber = if (obj.has("order_number") && !obj.isNull("order_number")) obj.getLong("order_number") else null,
+                    orderNumber = orderNumber,
                     creditsRequested = if (obj.has("credits_requested") && !obj.isNull("credits_requested")) obj.getInt("credits_requested") else null,
                     customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                     customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
                     paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                     taskId = taskId
                 ))
+
+                OrderEventLogger.orderDelivered(requestId, orderNumber, deviceId, "PENDING")
 
                 // إشعار الطلبات الجديدة فقط (لم يكن موجوداً من قبل)
                 if (existingOrder == null) {

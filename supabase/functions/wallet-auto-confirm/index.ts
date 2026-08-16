@@ -270,6 +270,7 @@ Deno.serve(async (req: Request) => {
       p_device_id: payload.device_id,
     });
     const newlyDispatched = (retryResult as any)?.dispatched ?? 0;
+    const reassignedFromOffline = (retryResult as any)?.reassigned_from_offline ?? 0;
 
     const { data: result } = await db.rpc('get_device_pending_tasks', {
       p_device_id: payload.device_id,
@@ -290,6 +291,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (reassignedFromOffline > 0) {
+      await db.rpc('create_admin_notification', {
+        p_title: `إعادة توزيع ${reassignedFromOffline} طلب من جهاز غير متصل 🔄`,
+        p_message: `تمت إعادة توزيع ${reassignedFromOffline} مهمة من جهاز مقفل/غير متصل إلى الجهاز الحالي`,
+        p_event_type: 'stale_device_reassigned',
+        p_reference_id: payload.device_id,
+        p_device_id: payload.device_id,
+      });
+    }
+
     return jsonResponse({
       ok: true,
       action: 'heartbeat',
@@ -297,6 +308,7 @@ Deno.serve(async (req: Request) => {
       pending_tasks: tasks,
       commands,
       newly_dispatched: newlyDispatched,
+      reassigned_from_offline: reassignedFromOffline,
     });
   }
 

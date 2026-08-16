@@ -11,7 +11,7 @@ import org.json.JSONObject
  */
 class OrderSyncManager(
     private val context: Context,
-    private val adminUrl: String,
+    val adminUrl: String,
     private val onResult: (success: Boolean, message: String) -> Unit = { _, _ -> }
 ) {
     private val handler = Handler(Looper.getMainLooper())
@@ -125,6 +125,8 @@ class OrderSyncManager(
             return
         }
 
+        OrderEventLogger.syncRequest("admin_orders", deviceId)
+
         val accessToken = AdminSession.accessToken(context) ?: return
         val refreshToken = AdminSession.refreshToken(context)
 
@@ -157,21 +159,33 @@ class OrderSyncManager(
                 )
             }
 
-            // تحليل كل الطلبات
+            // تحليل كل الطلبات مع حماية من التكرار داخل نفس الاستجابة
             val orders = mutableListOf<OrderItem>()
+            val seenOrderIds = mutableSetOf<String>()
             if (json.has("all_orders")) {
                 val arr = json.getJSONArray("all_orders")
                 for (i in 0 until arr.length()) {
-                    orders.add(parseOrder(arr.getJSONObject(i)))
+                    val order = parseOrder(arr.getJSONObject(i))
+                    if (seenOrderIds.add(order.requestId)) {
+                        orders.add(order)
+                    } else {
+                        OrderEventLogger.duplicateIgnored(order.requestId, order.orderNumber, null)
+                    }
                 }
             }
 
             // تحليل المهام المعلقة للجهاز
             val pendingTasks = mutableListOf<TaskScanner.Task>()
+            val seenTaskIds = mutableSetOf<String>()
             if (json.has("pending_tasks")) {
                 val arr = json.getJSONArray("pending_tasks")
                 for (i in 0 until arr.length()) {
-                    pendingTasks.add(parseTask(arr.getJSONObject(i)))
+                    val task = parseTask(arr.getJSONObject(i))
+                    if (seenTaskIds.add(task.taskId)) {
+                        pendingTasks.add(task)
+                    } else {
+                        OrderEventLogger.duplicateIgnored(task.requestId, task.orderNumber, task.taskId)
+                    }
                 }
             }
 
@@ -209,6 +223,9 @@ class OrderSyncManager(
             AppState.lastSyncTime.postValue(System.currentTimeMillis())
             val dispatched = json.optInt("newly_dispatched", 0)
             val reassigned = json.optInt("reassigned_from_offline", 0)
+            if (dispatched > 0) OrderEventLogger.orderDispatched(null, null, deviceId)
+            if (reassigned > 0) OrderEventLogger.staleDeviceReassigned(reassigned, deviceId)
+            OrderEventLogger.syncResponse(orders.size, pendingTasks.size, deviceId)
             android.util.Log.d(TAG, "Synced ${orders.size} orders, ${pendingTasks.size} pending tasks, dispatched=$dispatched, reassigned=$reassigned")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to parse admin orders response: ${e.message}")

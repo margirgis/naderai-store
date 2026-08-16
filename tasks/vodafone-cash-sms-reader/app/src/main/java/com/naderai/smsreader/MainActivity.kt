@@ -55,6 +55,8 @@ class MainActivity : AppCompatActivity() {
         })
         startServiceIfConfigured()
         startOrderSyncManager()
+        NetworkMonitor.start(this)
+        SyncTriggers.onAppStart(this)
     }
 
     private fun loadOrdersFromStorage() {
@@ -92,6 +94,13 @@ class MainActivity : AppCompatActivity() {
         }
         startServiceIfConfigured()
         startOrderSyncManager()
+        NetworkMonitor.start(this)
+        SyncTriggers.triggerSync(this, "resume")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        NetworkMonitor.stop(this)
     }
 
     private fun startServiceIfConfigured() {
