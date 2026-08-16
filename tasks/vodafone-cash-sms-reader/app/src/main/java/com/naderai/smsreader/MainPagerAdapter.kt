@@ -9,7 +9,7 @@ class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activi
     private val pages: List<Pair<String, Fragment>> = listOf(
         "الرئيسية" to HomeFragment(),
         "الإشعارات" to NotificationsFragment(),
-        "الكل" to OrdersFragment.newInstance(null),
+        "الكل" to OrdersFragment.newInstance(emptyList()),
         // "قيد المراجعة" يجمع الطلبات الجديدة (pending) وتلك التي بدأ فحصها (scanning)
         // لأن المستخدم يعتبرها كلها تحت المراجعة حتى تكتمل أو تفشل.
         "قيد المراجعة" to OrdersFragment.newInstance(listOf(OrderStatus.PENDING, OrderStatus.SCANNING)),
