@@ -272,7 +272,7 @@ object TaskScanner {
                 "sender_phone"     to (m.senderPhone ?: ""),
                 "sender_name"      to (m.senderName ?: ""),
                 "amount"           to (m.amount ?: 0.0),
-                "transaction_id"   to (m.transactionId ?: ""),
+                "transaction_id"   to (m.transactionId),
                 "transaction_time" to smsDateIso,
                 "receiver_wallet"  to (m.receiverWallet ?: ""),
                 "sms_body"         to m.body,
@@ -321,7 +321,7 @@ object TaskScanner {
                     "sender_phone"     to (m.senderPhone ?: ""),
                     "sender_name"      to (m.senderName ?: ""),
                     "amount"           to (m.amount ?: 0.0),
-                    "transaction_id"   to (m.transactionId ?: ""),
+                    "transaction_id"   to (m.transactionId),
                     "transaction_time" to isoFmt.format(Date(m.date)),
                     "receiver_wallet"  to (m.receiverWallet ?: ""),
                     "sms_body"         to m.body,
@@ -494,7 +494,8 @@ object TaskScanner {
 
     /**
      * التحقق من أن الرسالة رسالة فودافون كاش رسمية "استلام" (received).
-     * لازم تحتوي على مؤشر فودافون، وعبارة استلام، وتحتوي على مبلغ ورقم عملية.
+     * يجب أن تحتوي على مؤشر فودافون + عبارة استلام/استلمت + مبلغ.
+     * رقم العملية ليس شرطاً في التصفية لأن parseSmsBody يستخرجه لاحقاً.
      * رسائل "تم تحويل" (صادرة) مرفوضة لأنها مش تأكيد دفع وارد.
      */
     fun isOfficialVodafoneCashMessage(body: String): Boolean {
@@ -502,15 +503,13 @@ object TaskScanner {
         if (RECEIVED_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
         if (OUTGOING_KEYWORDS.any { body.contains(it, ignoreCase = true) }) return false
 
-        val hasAmount = Regex(
-            """(?:تم\s+استلام(?:\s+مبلغ)?|استلام(?:\s+مبلغ)?|استلمت(?:\s+مبلغ)?|مبلغ)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|egp)""",
-            RegexOption.IGNORE_CASE
-        ).find(body) != null
-        val hasTransaction = Regex(
-            """(?:رقم\s+العملية|رقم العملية|transaction|كود\s+المعاملة)[:\s]+([A-Za-z0-9]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(body) != null
-        return hasAmount && hasTransaction
+        val hasAmount = listOf(
+            Regex("""(?:تم\s+استلام(?:\s+مبلغ)?|استلام(?:\s+مبلغ)?|استلمت(?:\s+مبلغ)?|مبلغ)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|ج\.م|egp)""", RegexOption.IGNORE_CASE),
+            Regex("""(?:received|rcv|rec\.?)\s+(?:egp|amount)?\s*[\d,]+\.?\d*""", RegexOption.IGNORE_CASE),
+            Regex("""\bEGP\s+[\d,]+\.?\d*""", RegexOption.IGNORE_CASE),
+            Regex("""\b[\d,]+\.?\d*\s*(?:جنيه|جنية|ج\.م|egp)\b""", RegexOption.IGNORE_CASE)
+        ).any { it.find(body) != null }
+        return hasAmount
     }
 
     /**

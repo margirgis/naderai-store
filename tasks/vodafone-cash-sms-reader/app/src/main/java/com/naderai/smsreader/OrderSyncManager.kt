@@ -24,7 +24,7 @@ class OrderSyncManager(
     }
 
     companion object {
-        private const val SYNC_INTERVAL_MS = 60_000L
+        private const val SYNC_INTERVAL_MS = 30_000L
         private const val TAG = "OrderSyncManager"
 
         /**
@@ -40,14 +40,22 @@ class OrderSyncManager(
 
             val status = OrderStatus.fromString(obj.optString("status"))
             val scanStatus = obj.optString("scan_status")
-            // نفضل عرض scan_status كحالة فعالة إذا كان يوضح نتيجة الفحص
-            val effectiveStatus = when {
-                scanStatus == "scanning" -> OrderStatus.SCANNING
-                scanStatus == "success" -> OrderStatus.CONFIRMED
-                scanStatus == "not_found" -> OrderStatus.NOT_FOUND
-                scanStatus == "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
-                scanStatus == "failure" -> OrderStatus.FAILED
-                scanStatus == "duplicate" -> OrderStatus.DUPLICATE
+            val resultStatus = obj.optString("result_status").takeIf { it.isNotEmpty() }
+            val taskFailureReason = obj.optString("task_failure_reason").takeIf { it.isNotEmpty() }
+            val serverFailureReason = obj.optString("failure_reason").takeIf { it.isNotEmpty() }
+
+            // نفضل عرض result_status (من pending_tasks) ثم scan_status ثم status
+            val effectiveStatus = when (resultStatus ?: scanStatus) {
+                "scanning" -> OrderStatus.SCANNING
+                "success" -> OrderStatus.CONFIRMED
+                "verified" -> OrderStatus.FOUND
+                "approved" -> OrderStatus.CONFIRMED
+                "not_found" -> OrderStatus.NOT_FOUND
+                "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
+                "manual_review" -> OrderStatus.MANUAL_REVIEW
+                "failure" -> OrderStatus.FAILED
+                "duplicate" -> OrderStatus.DUPLICATE
+                "rejected" -> OrderStatus.NOT_FOUND
                 else -> status
             }
 
@@ -62,14 +70,36 @@ class OrderSyncManager(
                 System.currentTimeMillis()
             }
 
+            val orderExpiresAt = obj.optString("order_expires_at").takeIf { it.isNotEmpty() }
+            val isExpired = try {
+                !orderExpiresAt.isNullOrEmpty() &&
+                        java.time.Instant.parse(orderExpiresAt).isBefore(java.time.Instant.now())
+            } catch (e: Exception) {
+                false
+            }
+
+            val finalStatus = if (isExpired && effectiveStatus !in setOf(
+                    OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.NOT_FOUND,
+                    OrderStatus.DUPLICATE, OrderStatus.MANUAL_REVIEW
+                )) {
+                OrderStatus.EXPIRED
+            } else effectiveStatus
+
+            val finalReason = when {
+                finalStatus == OrderStatus.EXPIRED -> "انتهت صلاحية الطلب"
+                taskFailureReason?.isNotEmpty() == true -> taskFailureReason
+                serverFailureReason?.isNotEmpty() == true -> serverFailureReason
+                else -> null
+            }
+
             return OrderItem(
                 requestId = requestId,
                 orderLabel = "طلب #${orderNumber ?: requestId.take(8)}",
                 expectedAmount = obj.optDouble("amount_requested", 0.0),
-                status = effectiveStatus,
+                status = finalStatus,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
-                failureReason = obj.optString("failure_reason").takeIf { it.isNotEmpty() },
+                failureReason = finalReason,
                 transactionId = obj.optString("transaction_id").takeIf { it.isNotEmpty() },
                 orderNumber = orderNumber,
                 creditsRequested = obj.optInt("credits_requested", 0).takeIf { it > 0 },
@@ -79,7 +109,9 @@ class OrderSyncManager(
                 paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                 taskId = obj.optString("task_id").takeIf { it.isNotEmpty() },
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
-                orderExpiresAt = obj.optString("order_expires_at").takeIf { it.isNotEmpty() }
+                orderExpiresAt = orderExpiresAt,
+                scanStatus = scanStatus,
+                resultStatus = resultStatus
             )
         }
 

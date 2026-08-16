@@ -279,18 +279,22 @@ enum class OrderStatus(val label: String, val color: String) {
     FOUND("تم العثور عليه", "#10B981"),
     CONFIRMED("تم التأكيد", "#059669"),
     AMOUNT_MISMATCH("مبلغ غير مطابق", "#EF4444"),
+    MANUAL_REVIEW("يحتاج مراجعة يدوية", "#F97316"),
     NOT_FOUND("لم يتم العثور", "#6B7280"),
     FAILED("فشل", "#DC2626"),
-    DUPLICATE("مكرر", "#8B5CF6");
+    DUPLICATE("مكرر", "#8B5CF6"),
+    EXPIRED("انتهت الصلاحية", "#64748B");
 
     companion object {
         fun fromString(s: String?): OrderStatus = when (s) {
             "scanning" -> SCANNING
-            "found" -> FOUND
+            "found", "verified" -> FOUND
             "confirmed", "approved" -> CONFIRMED
             "amount_mismatch" -> AMOUNT_MISMATCH
+            "manual_review" -> MANUAL_REVIEW
             "not_found" -> NOT_FOUND
             "failed", "rejected" -> FAILED
+            "expired" -> EXPIRED
             "duplicate" -> DUPLICATE
             else -> PENDING
         }
@@ -321,5 +325,17 @@ data class OrderItem(
     val nextScanCountdown: Int = 0,   // ثواني حتى المحاولة القادمة
     // حقول نظام الطلبات المؤمنة (payment_orders)
     val paymentOrderId: String? = null,
-    val orderExpiresAt: String? = null
-)
+    val orderExpiresAt: String? = null,
+    // حالات إضافية من السيرفر
+    val scanStatus: String? = null,
+    val resultStatus: String? = null
+) {
+    fun isExpired(): Boolean {
+        if (orderExpiresAt.isNullOrEmpty()) return false
+        return try {
+            java.time.Instant.parse(orderExpiresAt).isBefore(java.time.Instant.now())
+        } catch (e: Exception) {
+            false
+        }
+    }
+}
