@@ -35,17 +35,28 @@ export default function WhatsAppChatButton() {
   if (dismissed) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div
+      className="fixed z-[50] flex flex-col items-end gap-2"
+      style={{
+        // فوق Bottom Navigation (متحرك) + مسافة آمنة + Safe Area
+        bottom: 'calc(var(--bottom-nav-height, 3.25rem) + 0.75rem + env(safe-area-inset-bottom, 0px))',
+        right: '1rem',
+      }}
+      dir="rtl"
+    >
       {/* Tooltip */}
       <div
         className={`
-          max-w-[12rem] bg-card text-foreground text-xs rounded-lg px-3 py-2 shadow border border-border
+          relative max-w-[14rem] bg-card text-foreground text-xs rounded-lg px-3 py-2 shadow border border-border text-right
           transition-all duration-300 pointer-events-none
           ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}
         `}
       >
         يمكنك التواصل معنا عبر الواتساب
-        <div className="absolute bottom-[-5px] right-5 w-2 h-2 bg-card border-b border-r border-border rotate-45" />
+        <div
+          className="absolute bottom-[-5px] right-5 w-2 h-2 bg-card border-b border-r border-border rotate-45"
+          aria-hidden="true"
+        />
       </div>
 
       <div className="flex items-center gap-2">

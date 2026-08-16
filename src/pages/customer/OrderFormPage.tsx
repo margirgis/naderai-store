@@ -39,7 +39,8 @@ export default function OrderFormPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [replayedOrderId, setReplayedOrderId] = useState<string | null>(null);
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [failedOrderId, setFailedOrderId] = useState<string | null>(null);
   // Server-side idempotency key — regenerated per form load; user can reset to force new order
   const generateKey = () => `ik_${Date.now()}_${Math.random().toString(36).slice(2)}_${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
   const [idempotencyKey, setIdempotencyKey] = useState<string>(generateKey());
@@ -93,20 +94,29 @@ export default function OrderFormPage() {
         return;
       }
 
-      if (!data?.success) {
-        // Idempotent replay: existing order returned
-        if (data?.order_id) {
-          setReplayedOrderId(data.order_id);
-          toast.info('طلبك موجود مسبقاً. يمكنك تتبعه أو إنشاء طلب جديد.');
-          return;
-        }
-        toast.error(data?.safe_message ?? 'تعذر إنشاء الطلب. حاول مرة أخرى.');
+      if (data?.active_order?.order_id) {
+        // طلب مفتوح فعلي — لا يمكن إنشاء طلب جديد
+        setActiveOrderId(data.active_order.order_id);
+        toast.info(data?.safe_message || 'لديك طلب مفتوح. يمكنك متابعته.');
+        return;
+      }
+
+      if (data?.success) {
+        toast.success('تم إنشاء طلبك بنجاح 🎉');
+        navigate(`/store/orders/${data.order_id}`);
+        return;
+      }
+
+      // فشل إنشاء الطلب (مثلاً خطأ من المزود) — ليس طلباً مفتوحاً
+      if (data?.order_id && data?.status === 'failed') {
+        setFailedOrderId(data.order_id);
+        toast.error(data?.safe_message ?? 'تعذر إنشاء الطلب. يمكنك المحاولة مرة أخرى.');
         submittedRef.current = false;
         return;
       }
 
-      toast.success('تم إنشاء طلبك بنجاح 🎉');
-      navigate(`/store/orders/${data.order_id}`);
+      toast.error(data?.safe_message ?? 'تعذر إنشاء الطلب. حاول مرة أخرى.');
+      submittedRef.current = false;
     } catch {
       toast.error('تعذر الاتصال بالخادم. حاول مرة أخرى بعد قليل.');
       submittedRef.current = false;
@@ -221,7 +231,7 @@ export default function OrderFormPage() {
             {/* Submit */}
             <Button
               className="w-full h-12 text-base font-semibold gap-2"
-              disabled={submitting || !isAvailable || !hasEnoughBalance || !confirmed}
+              disabled={submitting || !isAvailable || !hasEnoughBalance || !confirmed || !!activeOrderId}
               onClick={handleConfirm}
             >
               {submitting
@@ -230,27 +240,46 @@ export default function OrderFormPage() {
               }
             </Button>
 
-            {/* Replay notice */}
-            {replayedOrderId && (
+            {/* Active order notice */}
+            {activeOrderId && (
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-3">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800 leading-relaxed">
-                    يوجد طلب سابق بنفس البيانات. إذا كان قديماً أو فاشلاً، يمكنك إنشاء طلب جديد بدلاً من تتبعه.
+                    يوجد طلب مفتوح من نفس الخدمة. يمكنك متابعته مباشرة.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full h-10 text-sm"
+                  onClick={() => navigate(`/store/orders/${activeOrderId}`)}
+                >
+                  متابعة الطلب المفتوح
+                </Button>
+              </div>
+            )}
+
+            {/* Failed order notice */}
+            {failedOrderId && (
+              <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/20 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <p className="text-xs text-destructive leading-relaxed">
+                    تعذر إنشاء الطلب بسبب خطأ من المزود. يمكنك مراجعة الطلب الفاشل أو المحاولة بطلب جديد.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Button
                     variant="outline"
                     className="w-full h-10 text-sm"
-                    onClick={() => navigate(`/store/orders/${replayedOrderId}`)}
+                    onClick={() => navigate(`/store/orders/${failedOrderId}`)}
                   >
-                    تتبع الطلب السابق
+                    عرض الطلب الفاشل
                   </Button>
                   <Button
                     className="w-full h-10 text-sm"
                     onClick={() => {
-                      setReplayedOrderId(null);
+                      setFailedOrderId(null);
                       setIdempotencyKey(generateKey());
                       submittedRef.current = false;
                       toast.info('تم تجهيز طلب جديد. اضغط تأكيد الاشتراك.');

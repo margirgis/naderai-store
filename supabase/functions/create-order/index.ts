@@ -100,7 +100,32 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ success: false, safe_message: 'رصيد غير كافٍ. تواصل مع الدعم لشحن المحفظة.' }, 402);
   }
 
-  // 6b. Idempotency check — return existing order if same key already used
+  // 6b. Real Active Order check for same user + same service
+  const ACTIVE_ORDER_STATUSES = ['creating', 'queued', 'processing'];
+  const { data: activeOrders } = await db
+    .from('orders')
+    .select('id, status, reference, offer_link')
+    .eq('customer_id', userId)
+    .eq('service_id', svc.id)
+    .in('status', ACTIVE_ORDER_STATUSES)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (activeOrders && activeOrders.length > 0) {
+    const active = activeOrders[0];
+    return jsonResponse({
+      success: false,
+      active_order: {
+        order_id: active.id,
+        reference: active.reference,
+        status: active.status,
+        offer_link: active.offer_link ?? null,
+      },
+      safe_message: 'لديك طلب مفتوح من نفس الخدمة. يمكنك متابعته.',
+    }, 200);
+  }
+
+  // 6c. Idempotency check — return existing order if same key already used
   const idempotencyKey = body.idempotency_key ?? null;
   if (idempotencyKey) {
     const { data: existing } = await db
