@@ -54,3 +54,7 @@ historical_context.txt
 /tasks/naderai-app/.gradle/
 /tasks/naderai-app/app/build/
 /tasks/naderai-app/*.log
+/mobile-app/.gradle/
+/mobile-app/app/build/
+/mobile-app/*.log
+/tasks
