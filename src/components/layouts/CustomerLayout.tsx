@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/db/supabase';
 import type { Notification } from '@/types/types';
-import WhatsAppChatButton from '@/components/customer/WhatsAppChatButton';
 
 /* ── Notification Bell ─────────────────────────────────────────────────── */
 function NotificationBell() {
@@ -240,9 +239,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
       </Sheet>
 
       {/* Main */}
-      <div
-        className="flex-1 min-w-0 overflow-x-hidden flex flex-col [--bottom-nav-height:3.25rem] md:[--bottom-nav-height:0rem]"
-      >
+      <div className="flex-1 min-w-0 overflow-x-hidden flex flex-col">
         {/* Header */}
         <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3 border-b border-border bg-card/95 backdrop-blur-sm shrink-0 shadow-sm">
           <div className="flex items-center gap-2">
@@ -271,12 +268,9 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
           {children}
         </main>
 
-        {/* Floating WhatsApp support */}
-        <WhatsAppChatButton />
-
         {/* Mobile Bottom Navigation */}
         <nav
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card border-t border-border flex items-stretch pb-[env(safe-area-inset-bottom)] min-h-[var(--bottom-nav-height)]"
+          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card border-t border-border flex items-stretch pb-[env(safe-area-inset-bottom)] min-h-[3.25rem]"
           dir="rtl"
           aria-label="التنقل السفلي"
         >

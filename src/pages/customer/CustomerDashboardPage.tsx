@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/db/supabase';
 import type { Order, ProviderService } from '@/types/types';
 import { OrderStatusBadge } from '@/components/customer/OrderStatusBadge';
+import WhatsAppChatButton from '@/components/customer/WhatsAppChatButton';
 
 const GEMINI_HIGHLIGHTS = [
   { icon: Cpu,       text: 'Google Gemini AI كامل' },
@@ -63,6 +64,7 @@ export default function CustomerDashboardPage() {
   ];
 
   return (
+    <>
     <CustomerLayout>
       <div className="px-4 md:px-6 py-6 max-w-3xl mx-auto space-y-6">
 
@@ -178,5 +180,8 @@ export default function CustomerDashboardPage() {
         </Card>
       </div>
     </CustomerLayout>
-  );
+
+    {/* زر واتساب ثابت فقط على الشاشة الرئيسية */}
+    <WhatsAppChatButton />
+  </>);
 }
