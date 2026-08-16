@@ -19,7 +19,7 @@ class HeartbeatManager(
     private var registered = false
 
     companion object {
-        private const val HEARTBEAT_INTERVAL_MS = 120_000L
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L
         const val PREFS_NAME = "naderai_sms_reader"
         const val KEY_DEVICE_ID = "device_id"
 

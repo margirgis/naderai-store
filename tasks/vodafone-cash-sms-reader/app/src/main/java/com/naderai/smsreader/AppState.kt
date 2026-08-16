@@ -275,7 +275,7 @@ data class DeviceNotification(
 // ── Order status ──────────────────────────────────────────────────────────
 enum class OrderStatus(val label: String, val color: String) {
     PENDING("قيد المراجعة", "#F59E0B"),
-    SCANNING("جاري البحث", "#3B82F6"),
+    SCANNING("قيد المراجعة (جاري البحث)", "#3B82F6"),
     FOUND("تم العثور عليه", "#10B981"),
     CONFIRMED("تم التأكيد", "#059669"),
     AMOUNT_MISMATCH("مبلغ غير مطابق", "#EF4444"),

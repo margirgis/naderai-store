@@ -30,6 +30,11 @@ class DiagnosticsActivity : AppCompatActivity() {
         supportActionBar?.title = "تشخيصات النظام"
 
         binding.btnRefresh.setOnClickListener { refresh() }
+        binding.btnForceSync.setOnClickListener {
+            SyncTriggers.triggerSync(this, "diagnostics")
+            Toast.makeText(this, "جاري المزامنة الفورية…", Toast.LENGTH_SHORT).show()
+            binding.root.postDelayed({ refresh() }, 1_500)
+        }
         binding.btnOpenSettings.setOnClickListener { openAppSettings() }
 
         refresh()
@@ -44,7 +49,7 @@ class DiagnosticsActivity : AppCompatActivity() {
         binding.statusPermissions.text = if (hasSms && hasReceive) "✅ ممنوحة" else "❌ ناقصة"
         binding.statusBattery.text = if (batteryOk) "✅ متجاهلة" else "❌ مش متجاهلة"
         binding.statusService.text = if (serviceRunning) "✅ شغال" else "❌ متوقف"
-        binding.statusPendingOrders.text = AppState.getOrders().filter { it.status == OrderStatus.PENDING }.size.toString()
+        binding.statusPendingOrders.text = AppState.getOrders().filter { it.status == OrderStatus.PENDING || it.status == OrderStatus.SCANNING }.size.toString()
         binding.statusLastScan.text = AppState.getOrders().maxByOrNull { it.updatedAt }?.let { "#${it.orderNumber ?: it.requestId.take(8)} — ${it.status.label}" } ?: "—"
         binding.statusConnection.text = AppState.getConnectionStatus()
 

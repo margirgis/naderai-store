@@ -28,6 +28,9 @@ class NaderAiApplication : Application() {
             Thread.getDefaultUncaughtExceptionHandler()?.uncaughtException(thread, throwable)
         }
 
+        // عند تحديث التطبيق نمسح التخزين المحلي لتجنّب ظهور طلبات قديمة
+        OrderStorage.clearIfVersionChanged(this, BuildConfig.VERSION_NAME)
+
         // تحميل الطلبات المحلية عند بدء التطبيق
         try {
             val cached = OrderStorage.loadOrders(this)

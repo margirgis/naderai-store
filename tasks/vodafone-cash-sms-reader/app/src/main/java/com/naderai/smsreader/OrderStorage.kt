@@ -13,9 +13,24 @@ object OrderStorage {
 
     private const val PREFS_FILE = "orders_cache"
     private const val KEY_ORDERS = "orders_json"
+    private const val KEY_VERSION = "orders_cache_version"
 
     private fun getPrefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
+
+    /**
+     * يمسح التخزين المحلي إذا تغيّر إصدار التطبيق.
+     * يُستخدم عند التحديثات الكبرى لتجنّب عرض طلبات قديمة أو تالفة.
+     */
+    fun clearIfVersionChanged(context: Context, versionName: String) {
+        val prefs = getPrefs(context)
+        val stored = prefs.getString(KEY_VERSION, null)
+        if (stored != versionName) {
+            clear(context)
+            prefs.edit().putString(KEY_VERSION, versionName).apply()
+            android.util.Log.i("OrderStorage", "Cleared order cache because app version changed from $stored to $versionName")
+        }
+    }
 
     fun saveOrders(context: Context, orders: List<OrderItem>) {
         try {

@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   pending:         { label: 'قيد المراجعة',   variant: 'secondary' },
-  scanning:        { label: 'جاري الفحص',      variant: 'secondary' },
+  scanning:        { label: 'قيد المراجعة (جاري الفحص)', variant: 'secondary' },
   approved:        { label: 'تمت الموافقة',   variant: 'default' },
   rejected:        { label: 'مرفوض',          variant: 'destructive' },
   not_found:       { label: 'لم يوجد',        variant: 'outline' },
@@ -37,7 +37,7 @@ const SCAN_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   duplicate:     { label: 'مكرر',           color: 'text-purple-500' },
 };
 
-type FilterStatus = 'all' | 'pending' | 'scanning' | 'approved' | 'rejected';
+type FilterStatus = 'all' | 'review' | 'pending' | 'scanning' | 'approved' | 'rejected';
 
 export default function AdminTopupRequestsPage() {
   const navigate = useNavigate();
@@ -45,7 +45,7 @@ export default function AdminTopupRequestsPage() {
   const [customers, setCustomers] = useState<Record<string, Profile>>({});
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterStatus>('all');
+  const [filter, setFilter] = useState<FilterStatus>('review');
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const load = useCallback(async () => {
@@ -56,8 +56,10 @@ export default function AdminTopupRequestsPage() {
       .order('created_at', { ascending: false })
       .limit(100);
     if (filter !== 'all') {
-      // نفصل الحالة الإدارية (status) عن نتيجة الفحص (scan_status)
-      if (filter === 'scanning') {
+      // مراجعة = pending + scanning (الطلبات التي لم تنتهِ بعد)
+      if (filter === 'review') {
+        query = query.in('status', ['pending', 'scanning']);
+      } else if (filter === 'scanning') {
         query = query.eq('scan_status', 'scanning');
       } else {
         query = query.eq('status', filter);
@@ -85,8 +87,9 @@ export default function AdminTopupRequestsPage() {
           const newRow = payload.new as WalletTopupRequest;
           const scanStatus = (newRow as any).scan_status;
           const matches = filter === 'all'
+            || (filter === 'review' && (newRow.status === 'pending' || newRow.status === 'scanning'))
             || (filter === 'scanning' && scanStatus === 'scanning')
-            || (filter !== 'scanning' && newRow.status === filter);
+            || (filter !== 'review' && filter !== 'scanning' && newRow.status === filter);
           if (matches) {
             setRequests((prev) => [newRow, ...prev]);
             toast.info('طلب شحن جديد وصل!');
@@ -96,6 +99,7 @@ export default function AdminTopupRequestsPage() {
           setRequests((prev) => prev.map((r) => r.id === updated.id ? { ...r, ...updated } : r));
           if (updated.status === 'approved') toast.success('تم تأكيد طلب شحن تلقائياً ✓');
           if ((updated as any).scan_status === 'duplicate') toast.warning('تم رفض عملية مكررة');
+          if (updated.status === 'scanning') toast.info('طلب جديد بدأ فحصه على الجهاز');
         }
       })
       .subscribe();
@@ -163,6 +167,7 @@ export default function AdminTopupRequestsPage() {
 
   const stats = {
     total: requests.length,
+    review: requests.filter((r) => r.status === 'pending' || r.status === 'scanning').length,
     pending: requests.filter((r) => r.status === 'pending').length,
     scanning: requests.filter((r) => r.status === 'scanning').length,
     approved: requests.filter((r) => r.status === 'approved').length,
@@ -208,14 +213,14 @@ export default function AdminTopupRequestsPage() {
         {/* Stats row */}
         <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
           {[
-            { label: 'الكل',      value: stats.total,         color: 'text-foreground' },
-            { label: 'معلق',      value: stats.pending,       color: 'text-amber-500' },
-            { label: 'فحص',       value: stats.scanning,      color: 'text-blue-500' },
-            { label: 'موافق',     value: stats.approved,      color: 'text-green-500' },
-            { label: 'مكرر',      value: stats.duplicate,     color: 'text-purple-500' },
-            { label: 'غير مطابق', value: stats.amountMismatch,color: 'text-orange-500' },
-            { label: 'لم يوجد',   value: stats.notFound,      color: 'text-muted-foreground' },
-            { label: 'فشل',       value: stats.failed,        color: 'text-destructive' },
+            { label: 'الكل',         value: stats.total,         color: 'text-foreground' },
+            { label: 'قيد المراجعة', value: stats.review,        color: 'text-amber-500' },
+            { label: 'معلق',         value: stats.pending,       color: 'text-amber-400' },
+            { label: 'فحص',          value: stats.scanning,      color: 'text-blue-500' },
+            { label: 'موافق',        value: stats.approved,      color: 'text-green-500' },
+            { label: 'مكرر',         value: stats.duplicate,     color: 'text-purple-500' },
+            { label: 'غير مطابق',    value: stats.amountMismatch,color: 'text-orange-500' },
+            { label: 'لم يوجد',      value: stats.notFound,      color: 'text-muted-foreground' },
           ].map(({ label, value, color }) => (
             <Card key={label} className="text-center p-2">
               <p className={`text-xl font-bold ${color}`}>{value}</p>
@@ -232,8 +237,9 @@ export default function AdminTopupRequestsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="review">قيد المراجعة</SelectItem>
               <SelectItem value="all">جميع الطلبات</SelectItem>
-              <SelectItem value="pending">قيد المراجعة</SelectItem>
+              <SelectItem value="pending">معلق (قيد المراجعة)</SelectItem>
               <SelectItem value="scanning">جاري الفحص</SelectItem>
               <SelectItem value="approved">تمت الموافقة</SelectItem>
               <SelectItem value="rejected">مرفوض</SelectItem>
