@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NaderAI" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#7C3AED</item>
+        <item name="colorPrimaryVariant">#5B21B6</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#7C3AED</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">#7C3AED</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+
+    <style name="Theme.NaderAI.Splash" parent="Theme.NaderAI">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+</resources>

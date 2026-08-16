@@ -1,0 +1,19 @@
+<lint-module
+    format="1"
+    dir="/workspace/app-dpgpkghtekg1/tasks/vodafone-cash-sms-reader/app"
+    name=":app"
+    type="APP"
+    maven="Vodafone Cash SMS Reader:app:"
+    agpVersion="8.2.2"
+    buildFolder="build"
+    bootClassPath="/tmp/android-sdk/platforms/android-34/android.jar:/tmp/android-sdk/build-tools/34.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="1.8"
+    compileTarget="android-34"
+    neverShrinking="true">
+  <lintOptions
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>
