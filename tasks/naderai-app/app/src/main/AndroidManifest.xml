@@ -59,6 +59,12 @@
             </intent-filter>
         </activity>
 
+        <!-- شاشة رابط الدعوة الاختيارية -->
+        <activity
+            android:name=".InviteActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <!-- شاشة اختبار قراءة الرسائل -->
         <activity
             android:name=".SmsTestActivity"
