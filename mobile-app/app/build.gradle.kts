@@ -18,9 +18,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("../signing/release.keystore")
-            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "naderai2024"
-            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "naderai"
-            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "naderai2024"
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() } ?: "naderai2024"
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "naderai"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")?.takeIf { it.isNotBlank() } ?: "naderai2024"
         }
     }
 
