@@ -183,11 +183,6 @@ class HeartbeatManager(
                 val obj = tasksArr.getJSONObject(i)
                 val requestId = obj.getString("request_id")
                 val taskId = obj.getString("task_id")
-                if (!seenTaskIds.add(taskId)) {
-                    android.util.Log.w("HeartbeatManager", "Duplicate task_id in heartbeat: $taskId")
-                    OrderEventLogger.duplicateIgnored(requestId, existingOrder?.orderNumber, taskId)
-                    continue
-                }
 
                 // ══════════════════════════════════════════════════════════════
                 // حماية الحالات النهائية: لا نُعيد إرسال المهام التي انتهت سلفاً.
@@ -205,6 +200,12 @@ class HeartbeatManager(
                     android.util.Log.d("HeartbeatManager",
                         "Skipping terminal order $requestId (status=${existingOrder?.status?.name})")
                     OrderEventLogger.terminalIgnored(requestId, existingOrder?.orderNumber, existingOrder?.status?.name)
+                    continue
+                }
+
+                if (!seenTaskIds.add(taskId)) {
+                    android.util.Log.w("HeartbeatManager", "Duplicate task_id in heartbeat: $taskId")
+                    OrderEventLogger.duplicateIgnored(requestId, existingOrder?.orderNumber, taskId)
                     continue
                 }
 
