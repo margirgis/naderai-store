@@ -59,6 +59,7 @@ function extractTransactionId(text: string): string | null {
 function extractSenderName(text: string): string | null {
   const patterns = [
     /\u0628\u0625\u0633\u0645\s+([A-Za-z][A-Za-z0-9 ]{1,30})\s*\u0639\u0644\u0649/,
+    /(?:\u0627\u0644\u0645\u0633\u062c\u0644\s+)?\u0628\u0625\u0633\u0645\s+([\u0600-\u06FF ]{2,40})\s*\u0639\u0644\u0649/,
     /\u0628\u0627\u0633\u0645\s+([\u0600-\u06FF ]{2,30})\s+/,
     /from\s+([A-Za-z][A-Za-z ]{1,30})\s+on/i,
   ];
@@ -328,52 +329,23 @@ Deno.serve(async (req: Request) => {
           p_status: 'failure',
           p_result_data: payload.result_data ?? null,
           p_failure_reason: 'انتهت صلاحية الطلب قبل وصول نتيجة الفحص',
+          p_idempotency_key: payload.idempotency_key ?? null,
         });
         return jsonResponse({ ok: false, reason: 'order_expired' });
       }
     }
 
+    // complete_device_task now handles both payment_orders and legacy topup requests
     const { data, error } = await db.rpc('complete_device_task', {
       p_task_id: payload.task_id,
       p_status: payload.status,
       p_result_data: payload.result_data ?? null,
       p_failure_reason: payload.failure_reason ?? null,
+      p_idempotency_key: payload.idempotency_key ?? null,
     });
     if (error) return errorResponse(`ORDER_DELIVERY_FAILED: ${error.message}`, 500);
 
-    // ── If success + payment_order_id → secure atomic confirmation ──
-    if (payload.status === 'success' && taskRow?.payment_order_id) {
-      const rd = (payload.result_data ?? {}) as Record<string, unknown>;
-      const transactionId = typeof rd.transaction_id === 'string' ? rd.transaction_id : null;
-      const smsTimestamp  = typeof rd.transaction_time === 'string'
-        ? new Date(rd.transaction_time).toISOString() : null;
-      const receivedAmt   = typeof rd.amount === 'number' ? rd.amount : null;
-
-      if (receivedAmt !== null) {
-        const { data: confirmResult } = await db.rpc('confirm_payment_order', {
-          p_order_id:        taskRow.payment_order_id,
-          p_transaction_id:  transactionId,
-          p_received_amount: receivedAmt,
-          p_sender_phone:    typeof rd.sender_phone === 'string' ? rd.sender_phone : null,
-          p_sender_name:     typeof rd.sender_name  === 'string' ? rd.sender_name  : null,
-          p_sms_timestamp:   smsTimestamp,
-          p_device_id:       payload.device_id,
-          p_scan_id:         payload.task_id,
-          p_sms_body:        typeof rd.sms_body === 'string' ? rd.sms_body : null,
-        });
-        const scanStatus = (confirmResult as Record<string, unknown>)?.scan_status as string ?? 'confirmed';
-        await db.rpc('create_admin_notification', {
-          p_title:      scanStatus === 'confirmed' ? 'تأكيد دفع تلقائي ✅' : `نتيجة التحقق: ${scanStatus}`,
-          p_message:    `طلب الدفع ${(taskRow.payment_order_id as string).slice(0, 8)} — المعاملة: ${transactionId ?? 'N/A'}`,
-          p_event_type: `payment_order_${scanStatus}`,
-          p_reference_id: taskRow.payment_order_id,
-          p_device_id:  payload.device_id,
-        });
-        return jsonResponse({ ok: true, scan_status: scanStatus, ...confirmResult });
-      }
-    }
-
-    // Notify admin of scan result (legacy topup requests)
+    // Notify admin of scan result
     const statusLabels: Record<string, string> = {
       success: 'تم العثور على العملية ✓',
       not_found: 'لم يتم العثور',
@@ -381,15 +353,18 @@ Deno.serve(async (req: Request) => {
       amount_mismatch: 'مبلغ غير مطابق',
       duplicate: 'عملية مكررة',
     };
+    const result = (data ?? {}) as Record<string, unknown>;
+    const scanStatus = typeof result.scan_status === 'string' ? result.scan_status : payload.status;
+    const referenceId = (taskRow?.payment_order_id as string) ?? payload.task_id;
     await db.rpc('create_admin_notification', {
-      p_title: statusLabels[payload.status] ?? `نتيجة الفحص: ${payload.status}`,
-      p_message: `المهمة ${payload.task_id.slice(0,8)} — ${payload.failure_reason ?? (payload.result_data as Record<string, unknown>)?.transaction_id ?? ''}`,
-      p_event_type: `scan_${payload.status}`,
-      p_reference_id: payload.task_id,
+      p_title: statusLabels[payload.status] ?? `نتيجة الفحص: ${scanStatus}`,
+      p_message: `المهمة ${payload.task_id.slice(0, 8)} — ${payload.failure_reason ?? result.transaction_id ?? ''}`,
+      p_event_type: `scan_${scanStatus}`,
+      p_reference_id: referenceId,
       p_device_id: payload.device_id,
     });
 
-    return jsonResponse(data);
+    return jsonResponse({ ok: true, scan_status: scanStatus, ...result });
   }
 
   const smsPayload = payload as SmsPayload;

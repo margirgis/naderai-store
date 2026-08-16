@@ -75,6 +75,7 @@ class OrderSyncManager(
                 creditsRequested = obj.optInt("credits_requested", 0).takeIf { it > 0 },
                 customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                 customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
+                customerName = obj.optString("sender_name").takeIf { it.isNotEmpty() },
                 paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                 taskId = obj.optString("task_id").takeIf { it.isNotEmpty() },
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },

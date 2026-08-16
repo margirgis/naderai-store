@@ -172,6 +172,9 @@ object TaskScanner {
 
                     val phoneMatch = requested.isNotEmpty() && normalized == requested
 
+                    // مطابقة الاسم كتأكيد إضافي (اختياري، لا تمنع التأكيد لو الـ SMS بالعكس)
+                    val nameMatch = isNameMatch(task.senderNameRequested, parsed.senderName)
+
                     candidates.add(ScannedMessage(
                         sender = sender,
                         senderPhone = normalized,
@@ -182,7 +185,9 @@ object TaskScanner {
                         date = date,
                         amountMatch = amountMatch,
                         phoneMatch = phoneMatch,
-                        score = (if (amountMatch) 2 else 0) + (if (phoneMatch) 2 else 0),
+                        score = (if (amountMatch) 2 else 0) +
+                                (if (phoneMatch) 2 else 0) +
+                                (if (nameMatch) 1 else 0),
                         receiverWallet = parsed.receiverWallet
                     ))
                 }
@@ -568,8 +573,9 @@ object TaskScanner {
     private fun parseSmsBody(text: String): ParsedSms {
         // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────
         // "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ 15:54 26-08-13. رقم العملية: 022655099780"
+        // "تم استلام مبلغ 5.10 جنيه من 01222692182؛ المسجل بإسم نادر اكرام راغب مينا على رقم محفظتك 01097273680 ..."
         val officialVFRegex = Regex(
-            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})\s*[:؛.]?\s*المسجل\s+بإسم\s+([A-Za-z][A-Za-z0-9\s]{1,40})\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})\s+.*?\s*(?:بتاريخ|تاريخ العملية[:\s]+)\d{1,2}:\d{2}\s+\d{2}-\d{2}-\d{2,4}.*?(?:رقم\s+العملية|رقم العملية)[:\s]+([A-Za-z0-9]+)""",
+            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})\s*[:؛.]?\s*المسجل\s+بإسم\s+([A-Za-z][A-Za-z0-9\s]{1,40}|[\u0600-\u06FF\s]{2,40})\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})\s+.*?\s*(?:بتاريخ|تاريخ العملية[:\s]+)\d{1,2}:\d{2}\s+\d{2}-\d{2}-\d{2,4}.*?(?:رقم\s+العملية|رقم العملية)[:\s]+([A-Za-z0-9]+)""",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
         val om = officialVFRegex.find(text)
@@ -617,10 +623,11 @@ object TaskScanner {
             if (m != null) { senderPhone = m.groupValues[1].replace("\\s".toRegex(), ""); break }
         }
 
-        // Sender name — "بإسم AHMED REDA على" or "المسجل بإسم"
+        // Sender name — "بإسم AHMED REDA على" / "بإسم نادر اكرام على" / "المسجل بإسم"
         val nameRegexes = listOf(
             Regex("(?:المسجل\\s+)?بإسم\\s+([A-Za-z][A-Za-z0-9 ]{1,40})\\s*على"),
-            Regex("باسم\\s+([\\u0600-\\u06FF ]{2,30})\\s+"),
+            Regex("(?:المسجل\\s+)?بإسم\\s+([\\u0600-\\u06FF ]{2,40})\\s*على"),
+            Regex("(?:المسجل\\s+)?باسم\\s+([\\u0600-\\u06FF ]{2,40})\\s+"),
             Regex("from\\s+([A-Za-z][A-Za-z ]{1,30})\\s+on", RegexOption.IGNORE_CASE)
         )
         var senderName: String? = null
@@ -668,6 +675,18 @@ object TaskScanner {
             digits.length == 13 && digits.startsWith("20") && digits[3] == '1' -> digits.substring(3)
             else -> digits
         }
+    }
+
+    private fun isNameMatch(requested: String?, found: String?): Boolean {
+        if (requested.isNullOrEmpty() || found.isNullOrEmpty()) return false
+        // مقارنة مقتطفة: أول كلمة من الاسم المطلوب تظهر في الاسم الموجود
+        val requestedTokens = requested.trim().split(Regex("\\s+"))
+        val normalizedFound = found.lowercase().replace(Regex("[^a-z0-9\\u0600-\\u06FF\\s]"), "")
+        for (token in requestedTokens) {
+            val nToken = token.lowercase().replace(Regex("[^a-z0-9\\u0600-\\u06FF]"), "")
+            if (nToken.length >= 2 && normalizedFound.contains(nToken)) return true
+        }
+        return false
     }
 
     sealed class ScanResult {

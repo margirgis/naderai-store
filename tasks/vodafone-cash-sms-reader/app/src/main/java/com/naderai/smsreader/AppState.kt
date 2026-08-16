@@ -294,6 +294,7 @@ data class OrderItem(
     val creditsRequested: Int? = null,
     val customerEmail: String? = null,
     val customerPhone: String? = null,
+    val customerName: String? = null,
     val paymentMethod: String? = null,
     // مرجع للمهمة للعمليات اليدوية
     val taskId: String? = null,

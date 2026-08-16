@@ -72,6 +72,9 @@ Deno.serve(async (req: Request) => {
     is_active: true,
   }, { onConflict: 'device_id' });
 
+  // Assign pending requests to this device when no other device is handling them
+  await db.rpc('retry_pending_topup_requests', { p_device_id: deviceId });
+
   // Fetch all orders for the admin app
   const { data: allOrdersData } = await db.rpc('get_all_orders_for_admin');
   const allOrders = (allOrdersData as any)?.orders ?? [];

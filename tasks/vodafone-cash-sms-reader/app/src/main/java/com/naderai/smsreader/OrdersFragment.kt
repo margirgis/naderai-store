@@ -42,38 +42,67 @@ class OrdersFragment : Fragment() {
 
         adapter = OrderAdapter(
             onConfirmManual = { order ->
-                val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                if (order.taskId == null) {
+                    android.widget.Toast.makeText(requireContext(), "task_id غير متوفر — اضغط إعادة الفحص أولاً", android.widget.Toast.LENGTH_SHORT).show()
+                    return@OrderAdapter
+                }
+                val context = requireContext()
+                val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
                 val webhookUrl = SupabaseConfig.getWebhookUrl(prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)) ?: ""
                 val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
-                if (webhookUrl.isNotEmpty() && order.taskId != null) {
-                    android.widget.Toast.makeText(requireContext(), "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
-                    val body = mutableMapOf<String, Any>(
-                        "action" to "task_result",
-                        "device_id" to HeartbeatManager.getDeviceId(requireContext()),
-                        "task_id" to order.taskId,
-                        "request_id" to order.requestId,
-                        "status" to "success",
-                        "result_data" to mapOf(
-                            "manual_confirm" to true,
-                            "confirmed_by" to "device_admin",
-                            "amount" to order.expectedAmount,
-                            "sender_phone" to (order.customerPhone ?: ""),
-                            "transaction_id" to "manual-${System.currentTimeMillis()}",
-                            "sms_body" to "تم تأكيد الطلب يدوياً من الجهاز"
-                        )
-                    )
-                    WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, message, _ ->
-                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-                            if (success) {
-                                AppState.updateOrderStatus(order.requestId, OrderStatus.CONFIRMED)
-                                android.widget.Toast.makeText(requireContext(), "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                android.widget.Toast.makeText(requireContext(), "فشل التأكيد: $message", android.widget.Toast.LENGTH_LONG).show()
-                            }
+
+                android.widget.Toast.makeText(context, "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
+
+                val manualTask = TaskScanner.Task(
+                    taskId = order.taskId,
+                    requestId = order.requestId,
+                    amountRequested = order.expectedAmount,
+                    senderPhoneRequested = order.customerPhone,
+                    senderNameRequested = order.customerName,
+                    fingerprintAmount = order.expectedAmount,
+                    creditsAmount = order.creditsRequested?.toDouble(),
+                    orderNumber = order.orderNumber,
+                    creditsRequested = order.creditsRequested,
+                    customerEmail = order.customerEmail,
+                    customerPhone = order.customerPhone,
+                    paymentMethod = order.paymentMethod,
+                    requestCreatedAt = null,
+                    paymentOrderId = order.paymentOrderId,
+                    orderExpiresAt = order.orderExpiresAt
+                )
+
+                val now = System.currentTimeMillis()
+                val manualMessage = TaskScanner.ScannedMessage(
+                    sender = "manual_confirm",
+                    senderPhone = order.customerPhone,
+                    senderName = order.customerName,
+                    amount = order.expectedAmount,
+                    transactionId = "manual-${order.requestId}-${now}",
+                    body = "تم تأكيد الطلب يدوياً من الجهاز",
+                    date = now,
+                    amountMatch = true,
+                    phoneMatch = true,
+                    score = 5,
+                    receiverWallet = null
+                )
+                val result = TaskScanner.ScanResult.Success(manualMessage)
+
+                TaskScanner.sendTaskResult(
+                    context = context,
+                    task = manualTask,
+                    result = result,
+                    webhookUrl = webhookUrl,
+                    secret = secret
+                ) { success ->
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        if (success) {
+                            AppState.onTaskResult(manualTask, result)
+                            AppState.updateOrderStatus(order.requestId, OrderStatus.CONFIRMED)
+                            android.widget.Toast.makeText(context, "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "فشل التأكيد — تحقق من اتصال الإنترنت أو جلسة الأدمن", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
-                } else {
-                    android.widget.Toast.makeText(requireContext(), "task_id غير متوفر — اضغط إعادة الفحص أولاً", android.widget.Toast.LENGTH_SHORT).show()
                 }
             },
             onRescan = { order ->
@@ -101,21 +130,24 @@ class OrdersFragment : Fragment() {
             android.widget.Toast.makeText(requireContext(), "لا يوجد task_id لهذا الطلب", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        val prefs = requireContext().getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        val context = requireContext()
+        val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
         val webhookUrl = SupabaseConfig.getWebhookUrl(prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)) ?: ""
         val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
-        if (webhookUrl.isEmpty() || secret.isEmpty()) {
-            android.widget.Toast.makeText(requireContext(), "إعدادات الـ webhook غير مكتملة", android.widget.Toast.LENGTH_SHORT).show()
+        val adminLoggedIn = AdminSession.isLoggedIn(context)
+
+        if (!adminLoggedIn && (webhookUrl.isEmpty() || secret.isEmpty())) {
+            android.widget.Toast.makeText(context, "إعدادات الـ webhook غير مكتملة", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
-        android.widget.Toast.makeText(requireContext(), toast, android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(context, toast, android.widget.Toast.LENGTH_SHORT).show()
         val task = TaskScanner.Task(
             taskId = order.taskId,
             requestId = order.requestId,
             amountRequested = order.expectedAmount,
             senderPhoneRequested = order.customerPhone,
-            senderNameRequested = null,
+            senderNameRequested = order.customerName,
             fingerprintAmount = order.expectedAmount,
             creditsAmount = order.creditsRequested?.toDouble(),
             orderNumber = order.orderNumber,
@@ -127,7 +159,7 @@ class OrdersFragment : Fragment() {
             paymentOrderId = order.paymentOrderId,
             orderExpiresAt = order.orderExpiresAt
         )
-        SmsMonitorService.forceScanTask(requireContext(), task)
+        SmsMonitorService.forceScanTask(context, task)
     }
 
     override fun onDestroyView() {
