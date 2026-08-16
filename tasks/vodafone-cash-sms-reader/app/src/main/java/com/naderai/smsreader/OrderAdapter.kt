@@ -60,18 +60,20 @@ class OrderAdapter(
             // تاريخ الطلب
             binding.orderCreatedAt.text = formatTime(order.createdAt)
 
-            // سبب الفشل
-            if (!order.failureReason.isNullOrEmpty()) {
+            // سبب الفشل — يُخفى لو null أو "null" أو فارغ
+            val reasonText = order.failureReason?.takeIf { it.isNotEmpty() && it != "null" }
+            if (reasonText != null) {
                 binding.orderFailureReason.visibility = View.VISIBLE
-                binding.orderFailureReason.text = "⚠️ ${order.failureReason}"
+                binding.orderFailureReason.text = "⚠️ $reasonText"
             } else {
                 binding.orderFailureReason.visibility = View.GONE
             }
 
-            // رقم العملية
-            if (!order.transactionId.isNullOrEmpty()) {
+            // رقم العملية — يُخفى لو null أو "null"
+            val txText = order.transactionId?.takeIf { it.isNotEmpty() && it != "null" }
+            if (txText != null) {
                 binding.orderTxId.visibility = View.VISIBLE
-                binding.orderTxId.text = "رقم العملية: ${order.transactionId}"
+                binding.orderTxId.text = "رقم العملية: $txText"
             } else {
                 binding.orderTxId.visibility = View.GONE
             }

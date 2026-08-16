@@ -167,6 +167,12 @@ processTask(context, task, webhookUrl ?: "", secret ?: "")
                         "handlePendingTasks: skipping terminal order ${task.requestId} ($existingStatus)")
                     return@forEach
                 }
+                // لو task_id مش موجود، الطلب ده مش له مهمة فحص — تجاهله
+                if (task.taskId.isBlank()) {
+                    android.util.Log.w("SmsMonitorService",
+                        "handlePendingTasks: task for request ${task.requestId} has no taskId — skipping")
+                    return@forEach
+                }
                 val cached = TaskResultCache.get(context, task.taskId)
                 if (cached != null) {
                     android.util.Log.d("SmsMonitorService", "Task ${task.taskId} already cached, skipping re-scan")

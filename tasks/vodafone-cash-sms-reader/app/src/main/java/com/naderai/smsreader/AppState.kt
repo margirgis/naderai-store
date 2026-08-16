@@ -43,7 +43,19 @@ object AppState {
                     OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
                     OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE
                 )
-                val mergedStatus = if (isTerminal) existing.status else order.status
+                // SCANNING ليست terminal — لو السيرفر أعاد نفس الطلب بحالة جديدة نقبلها
+                val serverIsTerminal = order.status in setOf(
+                    OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
+                    OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE
+                )
+                val mergedStatus = when {
+                    // السيرفر جاب حالة نهائية → نثق بالسيرفر دائماً
+                    serverIsTerminal -> order.status
+                    // الجهاز عنده حالة نهائية → نحافظ عليها
+                    isTerminal -> existing.status
+                    // غير ذلك → نأخذ حالة السيرفر
+                    else -> order.status
+                }
                 // نحافظ على البيانات الحساسة (task_id, expiry) إذا كانت موجودة في السيرفر
                 currentMap[order.requestId] = order.copy(
                     status = mergedStatus,
@@ -226,14 +238,14 @@ object AppState {
         val current = orders.value?.toMutableList() ?: mutableListOf()
         val idx = current.indexOfFirst { it.requestId == order.requestId }
         if (idx >= 0) {
-            // لا نعيد الطلب الموجود لحالة "قيد المراجعة" إذا كان جاري البحث أو حالة نهائية
+            // نحافظ على الحالات النهائية فقط (confirmed/failed/not_found/mismatch/duplicate)
+            // SCANNING ليست نهائية — نسمح لها بالتغيير دائماً
             val existing = current[idx]
-            val keepStatus = existing.status == OrderStatus.SCANNING ||
-                             existing.status == OrderStatus.CONFIRMED ||
-                             existing.status == OrderStatus.FAILED ||
-                             existing.status == OrderStatus.NOT_FOUND ||
-                             existing.status == OrderStatus.AMOUNT_MISMATCH
-            current[idx] = if (keepStatus) order.copy(status = existing.status) else order
+            val isTerminal = existing.status in setOf(
+                OrderStatus.CONFIRMED, OrderStatus.FAILED,
+                OrderStatus.NOT_FOUND, OrderStatus.AMOUNT_MISMATCH, OrderStatus.DUPLICATE
+            )
+            current[idx] = if (isTerminal) order.copy(status = existing.status) else order
         } else {
             current.add(0, order)
         }
