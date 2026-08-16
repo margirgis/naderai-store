@@ -79,10 +79,12 @@ class OrderAdapter(
             }
 
             // حالة الفحص + عداد المحاولات (يظهر للطلبات المعلقة وجاري فحصها)
-            if (order.status == OrderStatus.SCANNING || order.status == OrderStatus.PENDING) {
+            if (order.status in setOf(OrderStatus.SCANNING, OrderStatus.PENDING, OrderStatus.MANUAL_REVIEW)) {
                 binding.orderScanProgress.visibility = View.VISIBLE
                 val remaining = order.maxAttempts - order.scanAttempt
                 val attemptText = when {
+                    order.status == OrderStatus.MANUAL_REVIEW -> "⚠️ يحتاج مراجعة يدوية"
+                    order.status == OrderStatus.EXPIRED -> "انتهت صلاحية الطلب"
                     order.scanAttempt > 0 -> "🔍 المحاولة ${order.scanAttempt}/${order.maxAttempts} (متبقي $remaining)"
                     else -> "⏳ في انتظار بدء الفحص…"
                 }
@@ -95,8 +97,9 @@ class OrderAdapter(
             }
 
             // أزرار الإجراءات: يبدأ الفحص للطلبات المعلقة، وتأكيد/إعادة للحالات النهائية
+            // الطلبات المنتهية الصلاحية لا تسمح بتأكيد يدوي
             val showActions = order.status in listOf(
-                OrderStatus.PENDING, OrderStatus.SCANNING,
+                OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MANUAL_REVIEW,
                 OrderStatus.AMOUNT_MISMATCH, OrderStatus.NOT_FOUND, OrderStatus.FAILED
             )
             binding.actionDivider.visibility = if (showActions) View.VISIBLE else View.GONE
