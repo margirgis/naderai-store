@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MainActivity: WebView يملأ الشاشة كاملاً + شريط تحميل -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/purple_primary">
+
+    <!-- WebView يملأ الشاشة كاملاً -->
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- شريط التحميل في الأعلى -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_gravity="top"
+        android:indeterminate="true"
+        android:progressTint="@color/white"
+        android:visibility="visible" />
+
+    <!-- شاشة splash بينما يتحمل الموقع -->
+    <LinearLayout
+        android:id="@+id/splashView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/purple_primary"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="visible">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Nader AI"
+            android:textColor="@color/white"
+            android:textSize="40sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="جاري التحميل…"
+            android:textColor="#CCFFFFFF"
+            android:textSize="16sp" />
+
+        <ProgressBar
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="24dp"
+            android:indeterminateTint="@color/white" />
+    </LinearLayout>
+
+    <!-- زر فتح شاشة الاختبار (أيقونة صغيرة في الأسفل) -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabSmsTest"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:contentDescription="اختبار SMS"
+        android:src="@android:drawable/ic_dialog_email"
+        app:backgroundTint="@color/purple_primary"
+        app:tint="@color/white"
+        app:fabSize="mini"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+</FrameLayout>
