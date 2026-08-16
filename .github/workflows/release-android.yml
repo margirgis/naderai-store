@@ -1,0 +1,90 @@
+name: Build Android APK Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version (e.g., 1.0.4)'
+        required: true
+        default: '1.0.4'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tasks/vodafone-cash-sms-reader
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Grant execute permission
+        run: chmod +x ./gradlew || true
+
+      - name: Build Release APK
+        run: gradle :app:assembleRelease
+
+      - name: Rename APK
+        run: mv app/build/outputs/apk/release/app-release.apk "naderai-sms-reader-v${{ steps.version.outputs.VERSION }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: naderai-sms-reader-v${{ steps.version.outputs.VERSION }}
+          path: tasks/vodafone-cash-sms-reader/naderai-sms-reader-v${{ steps.version.outputs.VERSION }}.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: Nader AI SMS Reader v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Nader AI SMS Reader v${{ steps.version.outputs.VERSION }}
+
+            ### ✨ جديد في هذا الإصدار
+            - **واجهة جديدة كاملة**: شاشة رئيسية، طلبات مقسمة حسب الحالة، إعدادات
+            - **لوحة إحصائيات حية**: عدد الطلبات المعلقة، المؤكدة، الفاشلة، وغير الموجودة
+            - **فحص SMS محسّن**: يستخرج رقم المحفظة، اسم المرسل، ورقم العملية بدقة أعلى
+            - **طابور إعادة الإرسال**: يحفظ النتائج أوفلاين ويرسلها عند الاتصال
+            - **اختبار الاتصال**: من شاشة الإعدادات مباشرةً
+            - **حماية من التكرار**: idempotency key في كل نتيجة فحص
+            - **شاشة الطلبات**: تبويبات لكل حالة (قيد المراجعة، جاري الفحص، تم التأكيد، فشل...)
+
+            ### 🔧 متطلبات التثبيت
+            - Android 8.0+ (API 26+)
+            - صلاحيات: قراءة SMS، استقبال SMS، الإشعارات
+            - يجب السماح لـ التطبيق بالعمل في الخلفية (Battery Optimization Exemption)
+
+            ### 📲 التثبيت
+            حمّل الملف `naderai-sms-reader-v${{ steps.version.outputs.VERSION }}.apk` وثبّته على جهاز Android المخصص
+          files: tasks/vodafone-cash-sms-reader/naderai-sms-reader-v${{ steps.version.outputs.VERSION }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

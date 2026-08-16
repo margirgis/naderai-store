@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- أيقونة NaderAI: دائرة بنفسجية + حرف N أبيض -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- خلفية بنفسجية -->
+    <path
+        android:fillColor="#7C3AED"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+
+    <!-- دائرة ناعمة داخلية -->
+    <path
+        android:fillColor="#5B21B6"
+        android:pathData="M54,18 A36,36 0 1,1 53.99,18 Z" />
+
+    <!-- حرف N أبيض -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,72 L36,36 L44,36 L62,60 L62,36 L70,36 L70,72 L62,72 L44,48 L44,72 Z" />
+
+    <!-- نجمة صغيرة AI -->
+    <path
+        android:fillColor="#E9D5FF"
+        android:pathData="M72,30 L73.5,27 L75,30 L78,31.5 L75,33 L73.5,36 L72,33 L69,31.5 Z" />
+</vector>
