@@ -17,17 +17,22 @@ class OrdersFragment : Fragment() {
     private var _binding: FragmentOrdersBinding? = null
     private val binding get() = _binding!!
     private lateinit var adapter: OrderAdapter
-    private var filterStatus: OrderStatus? = null
+    private var filterStatuses: List<OrderStatus> = emptyList()
 
     companion object {
-        private const val ARG_STATUS = "status"
-        fun newInstance(status: OrderStatus? = null): OrdersFragment {
+        private const val ARG_STATUSES = "statuses"
+        fun newInstance(statuses: List<OrderStatus>? = null): OrdersFragment {
             val f = OrdersFragment()
-            if (status != null) {
-                f.arguments = Bundle().apply { putString(ARG_STATUS, status.name) }
+            if (!statuses.isNullOrEmpty()) {
+                f.arguments = Bundle().apply {
+                    putStringArray(ARG_STATUSES, statuses.map { it.name }.toTypedArray())
+                }
             }
             return f
         }
+
+        /** للتوافق مع الأكواد القديمة التي تمرر حالة واحدة */
+        fun newInstance(status: OrderStatus?): OrdersFragment = newInstance(status?.let { listOf(it) })
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -37,8 +42,8 @@ class OrdersFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val statusName = arguments?.getString(ARG_STATUS)
-        filterStatus = if (statusName != null) OrderStatus.valueOf(statusName) else null
+        val names = arguments?.getStringArray(ARG_STATUSES)
+        filterStatuses = names?.mapNotNull { runCatching { OrderStatus.valueOf(it) }.getOrNull() } ?: emptyList()
 
         adapter = OrderAdapter(
             onConfirmManual = { order ->
@@ -116,12 +121,13 @@ class OrdersFragment : Fragment() {
         binding.ordersRecycler.adapter = adapter
 
         AppState.orders.observe(viewLifecycleOwner) { orders ->
-            val filtered = if (filterStatus != null) orders.filter { it.status == filterStatus } else orders
+            val filtered = if (filterStatuses.isNotEmpty()) orders.filter { it.status in filterStatuses } else orders
             adapter.submitList(filtered)
             binding.emptyText.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
-            binding.emptyText.text = if (filterStatus != null)
-                "لا توجد طلبات في حالة ${filterStatus!!.label}"
-            else "لا توجد طلبات بعد"
+            binding.emptyText.text = if (filterStatuses.isNotEmpty()) {
+                val labels = filterStatuses.joinToString(" / ") { it.label }
+                "لا توجد طلبات في حالة: $labels"
+            } else "لا توجد طلبات بعد"
         }
     }
 

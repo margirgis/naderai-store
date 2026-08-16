@@ -207,7 +207,9 @@ class OrderSyncManager(
 
             AppState.updateFromHeartbeat(true, "تمت مزامنة ${orders.size} طلب")
             AppState.lastSyncTime.postValue(System.currentTimeMillis())
-            android.util.Log.d(TAG, "Synced ${orders.size} orders, ${pendingTasks.size} pending tasks")
+            val dispatched = json.optInt("newly_dispatched", 0)
+            val reassigned = json.optInt("reassigned_from_offline", 0)
+            android.util.Log.d(TAG, "Synced ${orders.size} orders, ${pendingTasks.size} pending tasks, dispatched=$dispatched, reassigned=$reassigned")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to parse admin orders response: ${e.message}")
         }

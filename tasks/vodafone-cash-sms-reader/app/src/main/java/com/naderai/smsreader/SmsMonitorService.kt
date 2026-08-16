@@ -146,10 +146,11 @@ processTask(context, task, webhookUrl ?: "", secret ?: "")
         @JvmStatic
         fun handlePendingTasks(context: Context, tasks: List<TaskScanner.Task>, webhookUrl: String, secret: String) {
             if (tasks.isEmpty()) {
+                android.util.Log.d("SmsMonitorService", "handlePendingTasks called with empty list")
                 AppState.pendingTasks.postValue(emptyList())
                 return
             }
-            android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks")
+            android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks, starting scan")
             AppState.pendingTasks.postValue(tasks)
 
             TaskScanner.taskResultCallback = { task, result ->

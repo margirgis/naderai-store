@@ -148,17 +148,32 @@ class HeartbeatManager(
                 }
             }
 
+            // تسجيل عدد الطلبات التي تم توزيعها حديثاً على هذا الجهاز
+            val newlyDispatched = json.optInt("newly_dispatched", 0)
+            if (newlyDispatched > 0) {
+                android.util.Log.d("HeartbeatManager", "Server dispatched $newlyDispatched new task(s) to this device")
+            }
+
             // قراءة المهام المعلقة
             val tasksArr = when {
                 json.has("pending_tasks") -> json.getJSONArray("pending_tasks")
                 json.has("tasks") -> json.getJSONArray("tasks")
-                else -> return
+                else -> {
+                    android.util.Log.d("HeartbeatManager", "Heartbeat response has no tasks")
+                    return
+                }
             }
+            android.util.Log.d("HeartbeatManager", "Received ${tasksArr.length()} task(s) in heartbeat")
             val tasks = mutableListOf<TaskScanner.Task>()
+            val seenTaskIds = mutableSetOf<String>()
             for (i in 0 until tasksArr.length()) {
                 val obj = tasksArr.getJSONObject(i)
                 val requestId = obj.getString("request_id")
                 val taskId = obj.getString("task_id")
+                if (!seenTaskIds.add(taskId)) {
+                    android.util.Log.w("HeartbeatManager", "Duplicate task_id in heartbeat: $taskId")
+                    continue
+                }
 
                 // ══════════════════════════════════════════════════════════════
                 // حماية الحالات النهائية: لا نُعيد إرسال المهام التي انتهت سلفاً.
