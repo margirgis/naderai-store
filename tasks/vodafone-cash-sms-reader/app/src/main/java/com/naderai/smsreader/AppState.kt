@@ -308,11 +308,14 @@ data class OrderItem(
     val creditsRequested: Int? = null,
     val customerEmail: String? = null,
     val customerPhone: String? = null,
+    // اسم صاحب الحساب الحقيقي (من profiles.full_name) — ليس اسم المُحوِّل من SMS
     val customerName: String? = null,
     val paymentMethod: String? = null,
     // رقم محفظة المُحوِّل (المرسل) — مختلف عن customerPhone الذي هو رقم صاحب الحساب
     val senderPhoneRequested: String? = null,
     val senderNameRequested: String? = null,
+    // وقت إنشاء الطلب من السيرفر
+    val requestCreatedAt: String? = null,
     // مرجع للمهمة للعمليات اليدوية
     val taskId: String? = null,
     // عداد المحاولات

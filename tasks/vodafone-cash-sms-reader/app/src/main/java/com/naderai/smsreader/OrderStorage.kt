@@ -75,6 +75,10 @@ object OrderStorage {
             put("credits_requested", order.creditsRequested ?: JSONObject.NULL)
             put("customer_email", order.customerEmail ?: JSONObject.NULL)
             put("customer_phone", order.customerPhone ?: JSONObject.NULL)
+            put("customer_name", order.customerName ?: JSONObject.NULL)
+            put("sender_phone_requested", order.senderPhoneRequested ?: JSONObject.NULL)
+            put("sender_name_requested", order.senderNameRequested ?: JSONObject.NULL)
+            put("request_created_at", order.requestCreatedAt ?: JSONObject.NULL)
             put("payment_method", order.paymentMethod ?: JSONObject.NULL)
             put("task_id", order.taskId ?: JSONObject.NULL)
             put("scan_attempt", order.scanAttempt)
@@ -99,6 +103,10 @@ object OrderStorage {
             creditsRequested = json.takeIfInt("credits_requested"),
             customerEmail = json.takeIfString("customer_email"),
             customerPhone = json.takeIfString("customer_phone"),
+            customerName = json.takeIfString("customer_name"),
+            senderPhoneRequested = json.takeIfString("sender_phone_requested"),
+            senderNameRequested = json.takeIfString("sender_name_requested"),
+            requestCreatedAt = json.takeIfString("request_created_at"),
             paymentMethod = json.takeIfString("payment_method"),
             taskId = json.takeIfString("task_id"),
             scanAttempt = json.optInt("scan_attempt", 0),

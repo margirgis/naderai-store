@@ -62,6 +62,8 @@ object TaskScanner {
         val creditsRequested: Int?,
         val customerEmail: String?,
         val customerPhone: String?,
+        // اسم صاحب الحساب الحقيقي (profiles.full_name) — ليس اسم المُحوِّل
+        val customerName: String?,
         val paymentMethod: String?,
         val requestCreatedAt: String?,
         // بيانات payment_order الجديدة

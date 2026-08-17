@@ -35,10 +35,11 @@ export default function RegisterPage() {
       });
       if (error) { toast.error(error.message); return; }
       if (data.user) {
-        // Ensure profile row exists with role=user
+        // Ensure profile row exists with role=user — يحفظ full_name أيضاً
         await supabase.from('profiles').upsert({
           id: data.user.id,
           email: form.email.trim(),
+          full_name: form.name.trim() || null,
           role: 'user',
           wallet_balance: 0,
           status: 'active',

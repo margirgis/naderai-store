@@ -53,8 +53,11 @@ class OrderAdapter(
                 ?: "رقم غير معروف"
             binding.orderCustomerPhone.text = senderDisplay
 
-            // إيميل العميل (صاحب الحساب)
-            binding.orderCustomerEmail.text = order.customerEmail?.takeIf { it.isNotEmpty() } ?: "—"
+            // اسم صاحب الحساب الحقيقي (من profiles.full_name) — ليس اسم المُحوِّل
+            val nameDisplay = order.customerName?.takeIf { it.isNotEmpty() }
+                ?: order.customerEmail?.takeIf { it.isNotEmpty() }?.substringBefore('@')
+                ?: "—"
+            binding.orderCustomerEmail.text = "$nameDisplay • ${order.customerEmail?.takeIf { it.isNotEmpty() } ?: "—"}"
 
             // طريقة الدفع
             binding.orderPaymentMethod.text = when (order.paymentMethod) {
