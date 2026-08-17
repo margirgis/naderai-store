@@ -1,0 +1,389 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Smartphone, RefreshCw, Wifi, WifiOff, Clock, Trash2, Cpu, Hash,
+  Phone, Activity, TestTube2, Timer, Layers, CheckCircle2, XCircle,
+  ChevronDown, ChevronUp, GitCommitHorizontal,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AdminLayout } from '@/components/layouts/AdminLayout';
+import { supabase } from '@/db/supabase';
+import { toast } from 'sonner';
+import type { SmsDevice, PendingTask } from '@/types/types';
+
+export default function AdminSmsDevicesPage() {
+  const [devices, setDevices] = useState<SmsDevice[]>([]);
+  const [tasks, setTasks] = useState<PendingTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; ms?: number; at?: string }>>({});
+  const [timelineDevice, setTimelineDevice] = useState<SmsDevice | null>(null);
+  const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: devicesData, error: devicesError } = await supabase
+        .from('sms_device_status')
+        .select('*')
+        .order('last_heartbeat_at', { ascending: false });
+      if (devicesError) throw devicesError;
+      setDevices((devicesData ?? []) as SmsDevice[]);
+
+      const { data: tasksData } = await supabase
+        .from('pending_tasks')
+        .select('*')
+        .in('task_status', ['pending', 'assigned', 'in_progress'])
+        .order('created_at', { ascending: false });
+      setTasks((tasksData ?? []) as PendingTask[]);
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل تحميل حالة الأجهزة');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Realtime subscription — no polling needed
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel(`admin-devices-realtime-${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sms_device_status' }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          setDevices((prev) => prev.filter((d) => d.id !== (payload.old as any).id));
+        } else {
+          setDevices((prev) => {
+            const updated = payload.new as SmsDevice;
+            const idx = prev.findIndex((d) => d.id === updated.id);
+            if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
+            return [updated, ...prev];
+          });
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_tasks' }, () => {
+        // Refresh tasks on any change
+        supabase.from('pending_tasks')
+          .select('*')
+          .in('task_status', ['pending', 'assigned', 'in_progress'])
+          .order('created_at', { ascending: false })
+          .then(({ data }) => setTasks((data ?? []) as PendingTask[]));
+      })
+      .subscribe();
+    channelRef.current = channel;
+    return () => { supabase.removeChannel(channel).catch(() => {}); };
+  }, [load]);
+
+  const deleteDevice = async (id: string) => {
+    if (!confirm('هل تريد حذف هذا الجهاز من القائمة؟')) return;
+    try {
+      const { error } = await supabase.from('sms_device_status').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('تم حذف الجهاز');
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل حذف الجهاز');
+    }
+  };
+
+  const sendTestToDevice = async (device: SmsDevice) => {
+    if (testing) return;
+    setTesting(device.device_id);
+    try {
+      // Insert a real device_command row — Android picks it up on next heartbeat via get_pending_device_commands
+      const { error } = await supabase.from('device_commands').insert({
+        device_id: device.device_id,
+        command_type: 'test_server_to_android',
+        status: 'pending',
+        sent_at: new Date().toISOString(),
+        timeout_at: new Date(Date.now() + 120_000).toISOString(),
+      });
+      if (error) throw error;
+      toast.success(`✓ تم إرسال أمر الاختبار — سيظهر رد الجهاز تلقائياً`);
+      setTestResults((prev) => ({ ...prev, [device.device_id]: { ok: true, ms: undefined, at: new Date().toISOString() } }));
+    } catch (err: any) {
+      setTestResults((prev) => ({ ...prev, [device.device_id]: { ok: false } }));
+      toast.error(err?.message || 'فشل إرسال الاختبار');
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  // 120s threshold — heartbeat every 30s, allow up to 4 missed beats
+  const isOnline = (device: SmsDevice) => {
+    if (!device.last_heartbeat_at) return false;
+    return Date.now() - new Date(device.last_heartbeat_at).getTime() < 120_000;
+  };
+
+  const pendingForDevice = (deviceId: string) =>
+    tasks.filter((t) => t.device_id === deviceId);
+
+  const onlineCount = devices.filter(isOnline).length;
+
+  // ── Timeline dialog ──────────────────────────────────────────────────────
+  function DeviceTimeline({ device }: { device: SmsDevice }) {
+    const d = device as any;
+    const steps = [
+      { label: 'تم التسجيل', ts: device.created_at, done: !!device.created_at },
+      { label: 'آخر نبضة (Heartbeat)', ts: device.last_heartbeat_at, done: !!device.last_heartbeat_at },
+      { label: 'آخر اختبار', ts: d.last_test_at, done: !!d.last_test_at },
+      { label: 'آخر طلب شحن', ts: d.last_order_processed_at, done: !!d.last_order_processed_at },
+      { label: 'آخر SMS مُكتشف', ts: d.last_sms_at, done: !!d.last_sms_at },
+    ];
+    return (
+      <div className="space-y-3 py-2">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-start gap-3">
+            <div className="flex flex-col items-center shrink-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${step.done ? 'bg-primary/10 border-primary' : 'bg-muted border-border'}`}>
+                <GitCommitHorizontal className={`w-3.5 h-3.5 ${step.done ? 'text-primary' : 'text-muted-foreground'}`} />
+              </div>
+              {i < steps.length - 1 && <div className={`w-0.5 h-6 mt-1 ${step.done ? 'bg-primary/30' : 'bg-border'}`} />}
+            </div>
+            <div className="pt-1 min-w-0">
+              <p className={`text-sm font-medium ${step.done ? 'text-foreground' : 'text-muted-foreground'}`}>{step.label}</p>
+              {step.ts ? (
+                <p className="text-xs text-muted-foreground">{new Date(step.ts).toLocaleString('ar-EG')}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground/50 italic">لم يحدث بعد</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div className="px-4 md:px-6 py-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="space-y-0.5 flex-1 min-w-0">
+            <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <Smartphone className="w-5 h-5 text-primary" />
+              أجهزة SMS
+              {onlineCount > 0 && (
+                <Badge className="gap-1 bg-green-500/10 text-green-600">
+                  <Wifi className="w-3 h-3" /> {onlineCount} متصل
+                </Badge>
+              )}
+            </h1>
+            <p className="text-sm text-muted-foreground">مراقبة حية — يتحدث تلقائياً عند أي تغيير</p>
+          </div>
+          <Button variant="outline" size="sm" className="gap-1 shrink-0" onClick={load} disabled={loading}>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> تحديث
+          </Button>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="text-center p-3">
+            <p className="text-2xl font-bold text-primary">{devices.length}</p>
+            <p className="text-xs text-muted-foreground">إجمالي الأجهزة</p>
+          </Card>
+          <Card className="text-center p-3">
+            <p className="text-2xl font-bold text-green-500">{onlineCount}</p>
+            <p className="text-xs text-muted-foreground">متصل الآن</p>
+          </Card>
+          <Card className="text-center p-3">
+            <p className="text-2xl font-bold text-amber-500">{tasks.length}</p>
+            <p className="text-xs text-muted-foreground">مهام نشطة</p>
+          </Card>
+        </div>
+
+        {/* Devices list */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">قائمة الأجهزة</CardTitle>
+            <CardDescription>
+              الجهاز "متصل" إذا بعث إشارة خلال آخر 90 ثانية. الصفحة تتحدث تلقائياً بدون refresh.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {devices.length === 0 ? (
+              <div className="p-8 text-center space-y-3">
+                <Smartphone className="w-10 h-10 text-muted-foreground mx-auto opacity-50" />
+                <p className="text-sm text-muted-foreground">
+                  لا توجد أجهزة مسجلة. افتح تطبيق Android واضغط "تسجيل الجهاز".
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {devices.map((device) => {
+                  const online = isOnline(device);
+                  const pending = pendingForDevice(device.device_id);
+                  const testResult = testResults[device.device_id];
+                  const expanded = expandedDevice === device.device_id;
+                  return (
+                    <div key={device.id} className="p-4 space-y-3">
+                      {/* Status row */}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 space-y-1.5 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {online ? (
+                              <Badge className="gap-1 bg-green-500/10 text-green-600 hover:bg-green-500/20">
+                                <Wifi className="w-3 h-3" /> متصل
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="gap-1">
+                                <WifiOff className="w-3 h-3" /> غير متصل
+                              </Badge>
+                            )}
+                            {device.app_version && (
+                              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                                v{device.app_version}
+                              </span>
+                            )}
+                            {pending.length > 0 && (
+                              <Badge variant="secondary" className="gap-1">
+                                <Layers className="w-3 h-3" /> {pending.length} مهام
+                              </Badge>
+                            )}
+                          </div>
+
+                          <p className="text-sm font-medium truncate">
+                            {device.device_model || 'جهاز غير معروف'}
+                            {device.device_name ? ` (${device.device_name})` : ''}
+                          </p>
+
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                            <span className="flex items-center gap-1 font-mono">
+                              <Hash className="w-3 h-3" />
+                              {device.device_id.slice(0, 16)}…
+                            </span>
+                            {device.android_version && (
+                              <span className="flex items-center gap-1">
+                                <Cpu className="w-3 h-3" /> Android {device.android_version}
+                              </span>
+                            )}
+                            {device.phone_number && (
+                              <span className="flex items-center gap-1">
+                                <Phone className="w-3 h-3" /> {device.phone_number}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Timestamps */}
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              آخر نبضة: {device.last_heartbeat_at ? new Date(device.last_heartbeat_at).toLocaleString('ar-EG') : '—'}
+                            </span>
+                            {(device as any).last_sms_at && (
+                              <span className="flex items-center gap-1">
+                                <Activity className="w-3 h-3 shrink-0" />
+                                آخر SMS: {new Date((device as any).last_sms_at).toLocaleString('ar-EG')}
+                              </span>
+                            )}
+                            {(device as any).last_order_processed_at && (
+                              <span className="flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 shrink-0 text-green-500" />
+                                آخر طلب: {new Date((device as any).last_order_processed_at).toLocaleString('ar-EG')}
+                              </span>
+                            )}
+                            {(device as any).last_test_at && (
+                              <span className="flex items-center gap-1">
+                                <TestTube2 className="w-3 h-3 shrink-0 text-blue-500" />
+                                آخر اختبار: {new Date((device as any).last_test_at).toLocaleString('ar-EG')}
+                              </span>
+                            )}
+                          </div>
+
+                          {(device as any).response_time_ms && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Timer className="w-3 h-3" />
+                              زمن الاستجابة: {(device as any).response_time_ms}ms
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <Button
+                            variant="outline" size="sm"
+                            className="gap-1 text-xs"
+                            onClick={() => sendTestToDevice(device)}
+                            disabled={testing === device.device_id}
+                          >
+                            {testing === device.device_id
+                              ? <RefreshCw className="w-3 h-3 animate-spin" />
+                              : <TestTube2 className="w-3 h-3" />}
+                            اختبار
+                          </Button>
+                          <Button
+                            variant="outline" size="sm"
+                            className="gap-1 text-xs"
+                            onClick={() => setTimelineDevice(device)}
+                          >
+                            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            Timeline
+                          </Button>
+                          <Button
+                            variant="ghost" size="sm"
+                            className="text-destructive hover:text-destructive text-xs gap-1"
+                            onClick={() => deleteDevice(device.id)}
+                          >
+                            <Trash2 className="w-3 h-3" /> حذف
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Test result */}
+                      {testResult && (
+                        <div className={`text-xs px-3 py-2 rounded-md flex items-center gap-2 ${testResult.ok ? 'bg-green-500/10 text-green-600' : 'bg-destructive/10 text-destructive'}`}>
+                          {testResult.ok
+                            ? <><CheckCircle2 className="w-3.5 h-3.5" /> تم إرسال أمر الاختبار — سيرد الجهاز تلقائياً {testResult.ms ? `(${testResult.ms}ms)` : ''}</>
+                            : <><XCircle className="w-3.5 h-3.5" /> فشل الاختبار</>}
+                        </div>
+                      )}
+
+                      {/* Active tasks */}
+                      {pending.length > 0 && (
+                        <>
+                          <Separator />
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground">مهام قيد الفحص:</p>
+                            {pending.map((task) => (
+                              <div key={task.id} className="p-2 rounded-md bg-muted/30 text-xs space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium font-mono">طلب {task.request_id.slice(0, 8)}</span>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {task.task_status === 'in_progress' ? 'جاري الفحص' : task.task_status === 'assigned' ? 'مُسند' : 'في الانتظار'}
+                                  </Badge>
+                                </div>
+                                <p className="text-muted-foreground">
+                                  المبلغ: {task.amount_requested?.toFixed(2) ?? '—'} جنيه
+                                  {task.sender_phone_requested ? ` · من: ${task.sender_phone_requested}` : ''}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Device Timeline Dialog */}
+        <Dialog open={!!timelineDevice} onOpenChange={(o) => { if (!o) setTimelineDevice(null); }}>
+          <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <GitCommitHorizontal className="w-4 h-4 text-primary" />
+                Timeline — {timelineDevice?.device_model ?? timelineDevice?.device_id?.slice(0, 12)}
+              </DialogTitle>
+            </DialogHeader>
+            {timelineDevice && <DeviceTimeline device={timelineDevice} />}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </AdminLayout>
+  );
+}
