@@ -271,6 +271,7 @@ Deno.serve(async (req: Request) => {
     });
     const newlyDispatched = (retryResult as any)?.dispatched ?? 0;
     const reassignedFromOffline = (retryResult as any)?.reassigned_from_offline ?? 0;
+    const reopenedExpired = (retryResult as any)?.reopened_expired ?? 0;
 
     const { data: result } = await db.rpc('get_device_pending_tasks', {
       p_device_id: payload.device_id,
@@ -301,6 +302,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (reopenedExpired > 0) {
+      await db.rpc('create_admin_notification', {
+        p_title: `إعادة فتح ${reopenedExpired} طلب منتهي الصلاحية 🔄`,
+        p_message: `تم إعادة فتح ${reopenedExpired} طلب لإعادة الفحص بعد رجوع الجهاز للاتصال`,
+        p_event_type: 'expired_reopened',
+        p_reference_id: payload.device_id,
+        p_device_id: payload.device_id,
+      });
+    }
+
     return jsonResponse({
       ok: true,
       action: 'heartbeat',
@@ -309,6 +320,7 @@ Deno.serve(async (req: Request) => {
       commands,
       newly_dispatched: newlyDispatched,
       reassigned_from_offline: reassignedFromOffline,
+      reopened_expired: reopenedExpired,
     });
   }
 

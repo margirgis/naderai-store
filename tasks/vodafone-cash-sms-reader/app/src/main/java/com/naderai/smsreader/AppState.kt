@@ -38,23 +38,15 @@ object AppState {
         for (order in newOrders) {
             val existing = currentMap[order.requestId]
             if (existing != null) {
-                // لا نعيد الحالة النهائية إلى حالة مبدئية
-                val isTerminal = existing.status in setOf(
-                    OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
-                    OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE
-                )
-                // SCANNING ليست terminal — لو السيرفر أعاد نفس الطلب بحالة جديدة نقبلها
-                val serverIsTerminal = order.status in setOf(
-                    OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
-                    OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE
-                )
+                // الحالة النهائية الوحيدة هي CONFIRMED (موفق من قبل وموجب التأكيد)
+                val serverIsTerminal = order.status == OrderStatus.CONFIRMED
                 val mergedStatus = when {
-                    // السيرفر جاب حالة نهائية → نثق بالسيرفر دائماً
+                    // السيرفر جاب تأكيد نهائي → نثق بالسيرفر دائماً
                     serverIsTerminal -> order.status
-                    // الجهاز عنده حالة نهائية → نحافظ عليها
-                    isTerminal -> existing.status
-                    // غير ذلك → نأخذ حالة السيرفر
-                    else -> order.status
+                    // السيرفر بيعد فتح الطلب — نملك المراجعة للجهاز
+                    order.status == OrderStatus.PENDING -> OrderStatus.PENDING
+                    // الباقي نحافظ على الحالة المحلية
+                    else -> existing.status
                 }
                 // نحافظ على البيانات الحساسة (task_id, expiry) إذا كانت موجودة في السيرفر
                 currentMap[order.requestId] = order.copy(
@@ -243,14 +235,13 @@ object AppState {
         val current = orders.value?.toMutableList() ?: mutableListOf()
         val idx = current.indexOfFirst { it.requestId == order.requestId }
         if (idx >= 0) {
-            // نحافظ على الحالات النهائية فقط (confirmed/failed/not_found/mismatch/duplicate)
-            // SCANNING ليست نهائية — نسمح لها بالتغيير دائماً
+            // الحالة النهائية الوحيدة هي CONFIRMED (موفق من قبل)
             val existing = current[idx]
-            val isTerminal = existing.status in setOf(
-                OrderStatus.CONFIRMED, OrderStatus.FAILED,
-                OrderStatus.NOT_FOUND, OrderStatus.AMOUNT_MISMATCH, OrderStatus.DUPLICATE
-            )
-            current[idx] = if (isTerminal) order.copy(status = existing.status) else order
+            current[idx] = if (existing.status == OrderStatus.CONFIRMED) {
+                order.copy(status = existing.status)
+            } else {
+                order
+            }
         } else {
             current.add(0, order)
         }

@@ -185,22 +185,30 @@ class HeartbeatManager(
                 val taskId = obj.getString("task_id")
 
                 // ══════════════════════════════════════════════════════════════
-                // حماية الحالات النهائية: لا نُعيد إرسال المهام التي انتهت سلفاً.
-                // الحالات النهائية في AppState: CONFIRMED, NOT_FOUND, AMOUNT_MISMATCH, FAILED, DUPLICATE
+                // حماية الحالات النهائية: فقط CONFIRMED تعتبر نهائية.
+                // لاستعادة الوضع الفاشل عند الرينكونيكت: نعيد فتح أي طلب غير مؤكد.
                 // ══════════════════════════════════════════════════════════════
                 val existingOrder = AppState.getOrders().firstOrNull { it.requestId == requestId }
-                val isTerminal = existingOrder != null && existingOrder.status in setOf(
-                    OrderStatus.CONFIRMED,
-                    OrderStatus.NOT_FOUND,
-                    OrderStatus.AMOUNT_MISMATCH,
-                    OrderStatus.FAILED,
-                    OrderStatus.DUPLICATE
-                )
-                if (isTerminal) {
+                if (existingOrder != null && existingOrder.status == OrderStatus.CONFIRMED) {
                     android.util.Log.d("HeartbeatManager",
-                        "Skipping terminal order $requestId (status=${existingOrder?.status?.name})")
-                    OrderEventLogger.terminalIgnored(requestId, existingOrder?.orderNumber, existingOrder?.status?.name)
+                        "Skipping confirmed order $requestId (status=${existingOrder.status.name})")
+                    OrderEventLogger.terminalIgnored(requestId, existingOrder.orderNumber, existingOrder.status.name)
                     continue
+                }
+                // إذا كان الطلب فاشلاً أو منتهياً سابقاً، نعيد فتحه لإعادة الفحص
+                if (existingOrder != null && existingOrder.status != OrderStatus.PENDING) {
+                    AppState.updateOrderStatus(requestId, OrderStatus.PENDING)
+                    AppState.updateOrderScanProgress(requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
+                    TaskResultCache.remove(context, taskId)
+                    android.util.Log.d("HeartbeatManager",
+                        "Reopened order $requestId after reconnect for re-scan")
+                    OrderEventLogger.orderDelivered(requestId, existingOrder.orderNumber, deviceId, "PENDING")
+                    AppState.addNotification(DeviceNotification(
+                        title = "طلب مُعاد فتحه ✓",
+                        message = "طلب ${existingOrder.orderNumber?.let { "#$it" } ?: requestId.take(8)} أصبح متاحاً للفحص مرة أخرى",
+                        type = NotificationType.ORDER_NEW,
+                        referenceId = requestId
+                    ))
                 }
 
                 if (!seenTaskIds.add(taskId)) {

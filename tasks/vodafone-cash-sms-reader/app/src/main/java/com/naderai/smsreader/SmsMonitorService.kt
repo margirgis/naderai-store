@@ -77,16 +77,20 @@ class SmsMonitorService : Service() {
                 // تحقق من الحالة النهائية في AppState قبل أي فحص
                 val existingStatus = AppState.getOrders()
                     .firstOrNull { it.requestId == task.requestId }?.status
-        if (existingStatus != null && existingStatus in setOf(
-                OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
-                OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE)) {
-    android.util.Log.d("SmsMonitorService",
-        "onNewSms: skipping terminal order ${task.requestId} ($existingStatus)")
-return@forEach
-}
-if (TaskResultCache.get(context, task.taskId) != null) return@forEach
-processTask(context, task, webhookUrl ?: "", secret ?: "")
-}
+                if (existingStatus == OrderStatus.CONFIRMED) {
+                    android.util.Log.d("SmsMonitorService",
+                        "onNewSms: skipping confirmed order ${task.requestId}")
+                    return@forEach
+                }
+                // إذا كان الطلب فاشلاً أو منتهياً، نعيد فتحه قبل الفحص
+                if (existingStatus != null && existingStatus != OrderStatus.PENDING) {
+                    AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
+                    AppState.updateOrderScanProgress(task.requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
+                    TaskResultCache.remove(context, task.taskId)
+                }
+                if (TaskResultCache.get(context, task.taskId) != null) return@forEach
+                processTask(context, task, webhookUrl ?: "", secret ?: "")
+            }
 }
 
         private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
@@ -97,17 +101,20 @@ processTask(context, task, webhookUrl ?: "", secret ?: "")
                 return
             }
 
-            // ── نافذة انتهاء الصلاحية: رفض فوري إذا انتهى الطلب ─────────
+            // ── نافذة انتهاء الصلاحية ─────────
+            // لو الطلب انتهى فوق شروط مسموح بيها (مثلاً 24 ساعة)، نرفض فوري.
+            // لكن الآن نتيح فتح الطلب للمراجعة في الاتصال الأولى، لذا نمنح الفحص الحاقزي في نفسه.
             if (!task.orderExpiresAt.isNullOrEmpty()) {
                 try {
                     val expiresMs = java.time.Instant.parse(task.orderExpiresAt).toEpochMilli()
-                    if (System.currentTimeMillis() > expiresMs) {
+                    val deadlineMs = expiresMs + 24 * 60 * 60 * 1000L // 24 ساعة فوق انتهاء الصلاحية
+                    if (System.currentTimeMillis() > deadlineMs) {
                         android.util.Log.w("SmsMonitorService",
-                            "Task ${task.taskId}: order expired at ${task.orderExpiresAt} — rejecting immediately")
+                            "Task ${task.taskId}: order expired long ago (${task.orderExpiresAt}) — rejecting immediately")
                         TaskScanner.sendTaskResult(
                             context,
                             task,
-                            TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب قبل وصول رسالة SMS"),
+                            TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب منذ فترة طويلة"),
                             webhookUrl,
                             secret
                         ) { _ -> }
@@ -173,12 +180,15 @@ processTask(context, task, webhookUrl ?: "", secret ?: "")
                 // حماية مزدوجة: تحقق من الحالة النهائية في AppState
                 val existingStatus = AppState.getOrders()
                     .firstOrNull { it.requestId == task.requestId }?.status
-                if (existingStatus != null && existingStatus in setOf(
-                        OrderStatus.CONFIRMED, OrderStatus.NOT_FOUND,
-                        OrderStatus.AMOUNT_MISMATCH, OrderStatus.FAILED, OrderStatus.DUPLICATE)) {
+                if (existingStatus == OrderStatus.CONFIRMED) {
                     android.util.Log.d("SmsMonitorService",
-                        "handlePendingTasks: skipping terminal order ${task.requestId} ($existingStatus)")
+                        "handlePendingTasks: skipping confirmed order ${task.requestId}")
                     return@forEach
+                }
+                if (existingStatus != null && existingStatus != OrderStatus.PENDING) {
+                    AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
+                    AppState.updateOrderScanProgress(task.requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
+                    TaskResultCache.remove(context, task.taskId)
                 }
                 // لو task_id مش موجود، الطلب ده مش له مهمة فحص — تجاهله
                 if (task.taskId.isBlank()) {
