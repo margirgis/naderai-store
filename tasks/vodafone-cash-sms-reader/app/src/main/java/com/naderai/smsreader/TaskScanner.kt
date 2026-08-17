@@ -156,6 +156,13 @@ object TaskScanner {
             Telephony.Sms.DATE + " DESC"
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
 
+        // ══════════════════════════════════════════════════════════════════════
+        // هل senderPhoneRequested هو رقم محفظة الاستلام الخاصة بنا؟
+        // ذلك يحدث عندما يكون المستخدم قد أدخل رقم المحفظة المستلِمة بدل رقم المُرسِل.
+        // في هذه الحالة نتجاهل phoneMatch تماماً ونكتفي بـ amountMatch + name.
+        // ══════════════════════════════════════════════════════════════════════
+        val normalizedRequested = normalizeEgyptianPhone(task.senderPhoneRequested ?: "")
+
         val candidates = mutableListOf<ScannedMessage>()
         cursor.use { c ->
             while (c.moveToNext()) {
@@ -165,8 +172,7 @@ object TaskScanner {
 
                 if (isOfficialVodafoneCashMessage(body)) {
                     val parsed = parseSmsBody(body)
-                    val normalized = normalizeEgyptianPhone(parsed.senderPhone ?: sender)
-                    val requested = normalizeEgyptianPhone(task.senderPhoneRequested ?: "")
+                    val normalizedSender = normalizeEgyptianPhone(parsed.senderPhone ?: sender)
                     val amount = parsed.amount
 
                     // المبلغ المطلوب: fingerprintAmount لو موجود، وإلا amountRequested
@@ -175,23 +181,32 @@ object TaskScanner {
                         kotlin.math.abs(targetAmount - amount) <= 0.01
                     } else false
 
-                    val phoneMatch = requested.isNotEmpty() && normalized == requested
+                    // phoneMatch: صح لو رقم المُرسِل في SMS = الرقم المطلوب
+                    val phoneMatch = normalizedRequested.isNotEmpty() && normalizedSender == normalizedRequested
 
-                    // مطابقة الاسم كتأكيد إضافي (اختياري، لا تمنع التأكيد لو الـ SMS بالعكس)
+                    // receiverWalletMatch: لو الرقم المطلوب هو رقم محفظة الاستلام في نفس الرسالة
+                    // يعني المستخدم دخل الرقم الغلط — نقبل المطابقة بالمبلغ فقط
+                    val normalizedReceiver = normalizeEgyptianPhone(parsed.receiverWallet ?: "")
+                    val requestedIsReceiver = normalizedReceiver.isNotEmpty() &&
+                            normalizedReceiver == normalizedRequested
+
+                    // مطابقة الاسم كتأكيد إضافي (اختياري)
                     val nameMatch = isNameMatch(task.senderNameRequested, parsed.senderName)
+
+                    val effectivePhoneMatch = phoneMatch || requestedIsReceiver
 
                     candidates.add(ScannedMessage(
                         sender = sender,
-                        senderPhone = normalized,
+                        senderPhone = normalizedSender,
                         senderName = parsed.senderName,
                         amount = amount,
                         transactionId = parsed.transactionId,
                         body = body,
                         date = date,
                         amountMatch = amountMatch,
-                        phoneMatch = phoneMatch,
+                        phoneMatch = effectivePhoneMatch,
                         score = (if (amountMatch) 2 else 0) +
-                                (if (phoneMatch) 2 else 0) +
+                                (if (effectivePhoneMatch) 2 else 0) +
                                 (if (nameMatch) 1 else 0),
                         receiverWallet = parsed.receiverWallet
                     ))
@@ -214,6 +229,15 @@ object TaskScanner {
                 expectedAmount = task.fingerprintAmount ?: task.amountRequested,
                 foundAmount = closest.amount ?: 0.0
             )
+        }
+
+        // كل الرسائل موجودة لكن بدون phone match — نتحقق من المبلغ فقط كـ fallback
+        // هذا يحدث لو لم يُدخل المستخدم رقم المُرسِل الصحيح أصلاً
+        val amountOnlyMatch = candidates.filter { it.amountMatch }
+        if (amountOnlyMatch.isNotEmpty()) {
+            val best2 = amountOnlyMatch.maxByOrNull { it.score }!!
+            android.util.Log.w(TAG, "Amount-only match (no phone): ${best2.senderPhone} amount=${best2.amount}")
+            return ScanResult.Success(best2)
         }
 
         if (candidates.isEmpty()) {

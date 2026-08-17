@@ -250,6 +250,8 @@ class HeartbeatManager(
                     creditsRequested = if (obj.has("credits_requested") && !obj.isNull("credits_requested")) obj.getInt("credits_requested") else null,
                     customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                     customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
+                    senderPhoneRequested = obj.optString("sender_phone_requested").takeIf { it.isNotEmpty() },
+                    senderNameRequested = obj.optString("sender_name_requested").takeIf { it.isNotEmpty() },
                     paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                     taskId = taskId
                 ))

@@ -310,6 +310,9 @@ data class OrderItem(
     val customerPhone: String? = null,
     val customerName: String? = null,
     val paymentMethod: String? = null,
+    // رقم محفظة المُحوِّل (المرسل) — مختلف عن customerPhone الذي هو رقم صاحب الحساب
+    val senderPhoneRequested: String? = null,
+    val senderNameRequested: String? = null,
     // مرجع للمهمة للعمليات اليدوية
     val taskId: String? = null,
     // عداد المحاولات

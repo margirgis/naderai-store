@@ -46,8 +46,14 @@ class OrderAdapter(
             try { binding.orderStatusBadge.setBackgroundColor(Color.parseColor(order.status.color)) }
             catch (_: Exception) {}
 
-            // بيانات العميل
-            binding.orderCustomerPhone.text = order.customerPhone?.takeIf { it.isNotEmpty() } ?: "رقم غير معروف"
+            // بيانات المُحوِّل (رقم المرسل) — هذا هو الرقم الذي حوّل منه العميل
+            // customerPhone هو رقم صاحب الحساب (رقم تسجيل الدخول)، يختلف عن رقم المحفظة المُحوِّلة
+            val senderDisplay = order.senderPhoneRequested?.takeIf { it.isNotEmpty() }
+                ?: order.customerPhone?.takeIf { it.isNotEmpty() }
+                ?: "رقم غير معروف"
+            binding.orderCustomerPhone.text = senderDisplay
+
+            // إيميل العميل (صاحب الحساب)
             binding.orderCustomerEmail.text = order.customerEmail?.takeIf { it.isNotEmpty() } ?: "—"
 
             // طريقة الدفع

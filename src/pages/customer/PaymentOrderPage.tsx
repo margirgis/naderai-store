@@ -435,12 +435,12 @@ export default function PaymentOrderPage() {
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">رقم فودافون كاش المُحوِّل (رقمك) *</Label>
+                  <Label className="text-xs text-muted-foreground">رقم فودافون كاش الخاص بك (الرقم الذي ستحوّل <strong>منه</strong>) *</Label>
                   <Input
                     type="tel"
                     value={senderPhone}
                     onChange={e => setSenderPhone(e.target.value)}
-                    placeholder="01012345678"
+                    placeholder="مثال: 01222692182"
                     dir="ltr"
                     required
                     className="text-left"
