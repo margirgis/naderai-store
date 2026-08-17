@@ -58,12 +58,13 @@ class OrdersFragment : Fragment() {
 
                 android.widget.Toast.makeText(context, "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
 
+                // senderPhoneRequested هو رقم محفظة المُحوِّل — يختلف تماماً عن customerPhone
                 val manualTask = TaskScanner.Task(
                     taskId = order.taskId,
                     requestId = order.requestId,
                     amountRequested = order.expectedAmount,
-                    senderPhoneRequested = order.customerPhone,
-                    senderNameRequested = order.customerName,
+                    senderPhoneRequested = order.senderPhoneRequested,
+                    senderNameRequested = order.senderNameRequested,
                     fingerprintAmount = order.expectedAmount,
                     creditsAmount = order.creditsRequested?.toDouble(),
                     orderNumber = order.orderNumber,
@@ -79,7 +80,7 @@ class OrdersFragment : Fragment() {
                 val now = System.currentTimeMillis()
                 val manualMessage = TaskScanner.ScannedMessage(
                     sender = "manual_confirm",
-                    senderPhone = order.customerPhone,
+                    senderPhone = order.senderPhoneRequested,
                     senderName = order.customerName,
                     amount = order.expectedAmount,
                     transactionId = "manual-${order.requestId}-${now}",
@@ -148,12 +149,25 @@ class OrdersFragment : Fragment() {
         }
 
         android.widget.Toast.makeText(context, toast, android.widget.Toast.LENGTH_SHORT).show()
+
+        // PHASE 12: رفض sender_phone إذا كان فارغاً أو يساوي receiver_wallet
+        val senderPhone = order.senderPhoneRequested?.trim().orEmpty()
+        if (senderPhone.isEmpty()) {
+            android.widget.Toast.makeText(context, "رقم المُحوِّل غير متوفر — لا يمكن بدء الفحص", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        if (senderPhone == "01097273680") {
+            android.widget.Toast.makeText(context, "رقم محفظة الاستلام لا يُستخدم كرقم مُحوِّل", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // senderPhoneRequested هو رقم محفظة المُحوِّل — يختلف تماماً عن customerPhone
         val task = TaskScanner.Task(
             taskId = order.taskId,
             requestId = order.requestId,
             amountRequested = order.expectedAmount,
-            senderPhoneRequested = order.customerPhone,
-            senderNameRequested = order.customerName,
+            senderPhoneRequested = order.senderPhoneRequested,
+            senderNameRequested = order.senderNameRequested,
             fingerprintAmount = order.expectedAmount,
             creditsAmount = order.creditsRequested?.toDouble(),
             orderNumber = order.orderNumber,

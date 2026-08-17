@@ -46,11 +46,10 @@ class OrderAdapter(
             try { binding.orderStatusBadge.setBackgroundColor(Color.parseColor(order.status.color)) }
             catch (_: Exception) {}
 
-            // بيانات المُحوِّل (رقم المرسل) — هذا هو الرقم الذي حوّل منه العميل
-            // customerPhone هو رقم صاحب الحساب (رقم تسجيل الدخول)، يختلف عن رقم المحفظة المُحوِّلة
+            // senderPhoneRequested هو رقم المحفظة التي أرسلت التحويل.
+            // customerPhone هو رقم حساب العميل وليس رقم المحوّل.
             val senderDisplay = order.senderPhoneRequested?.takeIf { it.isNotEmpty() }
-                ?: order.customerPhone?.takeIf { it.isNotEmpty() }
-                ?: "رقم غير معروف"
+                ?: "رقم المُحوِّل غير متوفر"
             binding.orderCustomerPhone.text = senderDisplay
 
             // اسم صاحب الحساب الحقيقي (من profiles.full_name) — ليس اسم المُحوِّل

@@ -256,7 +256,9 @@ class HeartbeatManager(
                     senderPhoneRequested = obj.optString("sender_phone_requested").takeIf { it.isNotEmpty() },
                     senderNameRequested = obj.optString("sender_name_requested").takeIf { it.isNotEmpty() },
                     paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
-                    taskId = taskId
+                    taskId = taskId,
+                    paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
+                    orderExpiresAt = obj.optString("order_expires_at").takeIf { it.isNotEmpty() }
                 ))
 
                 OrderEventLogger.orderDelivered(requestId, orderNumber, deviceId, "PENDING")

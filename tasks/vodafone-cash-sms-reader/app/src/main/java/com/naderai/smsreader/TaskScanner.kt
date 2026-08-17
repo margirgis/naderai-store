@@ -146,6 +146,18 @@ object TaskScanner {
             return ScanResult.Failure("إذن قراءة الرسائل غير ممنوح")
         }
 
+        // لا يوجد فحص آمن بدون sender_phone؛ ممنوع الاعتماد على amount فقط.
+        val requestedPhone = task.senderPhoneRequested?.trim().orEmpty()
+        if (requestedPhone.isEmpty()) {
+            return ScanResult.Failure(
+                "رقم المحوّل غير موجود في بيانات الطلب — تم إيقاف الفحص"
+            )
+        }
+        val normalizedRequested = normalizeEgyptianPhone(requestedPhone)
+        if (normalizedRequested.isEmpty()) {
+            return ScanResult.Failure("رقم المحوّل في الطلب غير صالح")
+        }
+
         val cursor = context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(
@@ -157,13 +169,6 @@ object TaskScanner {
             null,
             Telephony.Sms.DATE + " DESC"
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
-
-        // ══════════════════════════════════════════════════════════════════════
-        // هل senderPhoneRequested هو رقم محفظة الاستلام الخاصة بنا؟
-        // ذلك يحدث عندما يكون المستخدم قد أدخل رقم المحفظة المستلِمة بدل رقم المُرسِل.
-        // في هذه الحالة نتجاهل phoneMatch تماماً ونكتفي بـ amountMatch + name.
-        // ══════════════════════════════════════════════════════════════════════
-        val normalizedRequested = normalizeEgyptianPhone(task.senderPhoneRequested ?: "")
 
         val candidates = mutableListOf<ScannedMessage>()
         cursor.use { c ->
@@ -186,16 +191,8 @@ object TaskScanner {
                     // phoneMatch: صح لو رقم المُرسِل في SMS = الرقم المطلوب
                     val phoneMatch = normalizedRequested.isNotEmpty() && normalizedSender == normalizedRequested
 
-                    // receiverWalletMatch: لو الرقم المطلوب هو رقم محفظة الاستلام في نفس الرسالة
-                    // يعني المستخدم دخل الرقم الغلط — نقبل المطابقة بالمبلغ فقط
-                    val normalizedReceiver = normalizeEgyptianPhone(parsed.receiverWallet ?: "")
-                    val requestedIsReceiver = normalizedReceiver.isNotEmpty() &&
-                            normalizedReceiver == normalizedRequested
-
                     // مطابقة الاسم كتأكيد إضافي (اختياري)
                     val nameMatch = isNameMatch(task.senderNameRequested, parsed.senderName)
-
-                    val effectivePhoneMatch = phoneMatch || requestedIsReceiver
 
                     candidates.add(ScannedMessage(
                         sender = sender,
@@ -206,9 +203,9 @@ object TaskScanner {
                         body = body,
                         date = date,
                         amountMatch = amountMatch,
-                        phoneMatch = effectivePhoneMatch,
+                        phoneMatch = phoneMatch,
                         score = (if (amountMatch) 2 else 0) +
-                                (if (effectivePhoneMatch) 2 else 0) +
+                                (if (phoneMatch) 2 else 0) +
                                 (if (nameMatch) 1 else 0),
                         receiverWallet = parsed.receiverWallet
                     ))
@@ -231,15 +228,6 @@ object TaskScanner {
                 expectedAmount = task.fingerprintAmount ?: task.amountRequested,
                 foundAmount = closest.amount ?: 0.0
             )
-        }
-
-        // كل الرسائل موجودة لكن بدون phone match — نتحقق من المبلغ فقط كـ fallback
-        // هذا يحدث لو لم يُدخل المستخدم رقم المُرسِل الصحيح أصلاً
-        val amountOnlyMatch = candidates.filter { it.amountMatch }
-        if (amountOnlyMatch.isNotEmpty()) {
-            val best2 = amountOnlyMatch.maxByOrNull { it.score }!!
-            android.util.Log.w(TAG, "Amount-only match (no phone): ${best2.senderPhone} amount=${best2.amount}")
-            return ScanResult.Success(best2)
         }
 
         if (candidates.isEmpty()) {
