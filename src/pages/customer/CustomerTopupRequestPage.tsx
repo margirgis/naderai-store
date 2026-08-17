@@ -583,13 +583,23 @@ export default function CustomerTopupRequestPage() {
                     ))}
                   </div>
 
-                  {/* سبب الفشل إن وجد */}
-                  {failReason && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <p>{failReason}</p>
-                    </div>
-                  )}
+                  {/* سبب الرفض — رسالة مستخدم لطيفة بدون تفاصيل تقنية */}
+                  {(['rejected','failed','not_found','amount_mismatch'].includes(r.status) ||
+                    ['rejected','failed','not_found','amount_mismatch'].includes(scanStatus ?? '')) && (() => {
+                    const st = scanStatus && STATUS_CONFIG[scanStatus] ? scanStatus : r.status;
+                    const userMsg =
+                      st === 'not_found'       ? 'لم يتم العثور على معاملة مطابقة. تأكد من إتمام التحويل ثم تواصل مع الدعم.' :
+                      st === 'amount_mismatch' ? 'المبلغ المُحوَّل لا يطابق المطلوب. تواصل مع الدعم لمراجعة الطلب.' :
+                      st === 'failed'          ? 'حدث خطأ أثناء معالجة الطلب. تواصل مع الدعم.' :
+                      st === 'rejected'        ? 'تم رفض الطلب. تواصل مع الدعم للاستفسار.' :
+                      'الطلب لم يكتمل. تواصل مع الدعم.';
+                    return (
+                      <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <p>{userMsg}</p>
+                      </div>
+                    );
+                  })()}
 
                   {/* رابط إكمال الدفع */}
                   {paymentOrderId && ['pending', 'scanning'].includes(r.status) && (

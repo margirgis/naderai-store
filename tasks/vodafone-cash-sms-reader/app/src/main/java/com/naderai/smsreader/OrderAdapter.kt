@@ -60,11 +60,17 @@ class OrderAdapter(
             // تاريخ الطلب
             binding.orderCreatedAt.text = formatTime(order.createdAt)
 
-            // سبب الفشل — يُخفى لو null أو "null" أو فارغ
-            val reasonText = order.failureReason?.takeIf { it.isNotEmpty() && it != "null" }
-            if (reasonText != null) {
+            // سبب الفشل — رسالة مستخدم لطيفة بدون تفاصيل تقنية
+            // لا نعرض "تم العثور على 734 رسالة لكن لا توجد مطابقة تامة" أو ما شابهها
+            val userFriendlyReason: String? = when (order.status) {
+                OrderStatus.NOT_FOUND      -> "لم يتم العثور على معاملة مطابقة"
+                OrderStatus.AMOUNT_MISMATCH-> "المبلغ المُحوَّل لا يطابق المطلوب"
+                OrderStatus.FAILED         -> "فشل الفحص — تواصل مع الدعم"
+                else -> null  // لا نعرض شيئاً للحالات الأخرى
+            }
+            if (userFriendlyReason != null) {
                 binding.orderFailureReason.visibility = View.VISIBLE
-                binding.orderFailureReason.text = "⚠️ $reasonText"
+                binding.orderFailureReason.text = "⚠️ $userFriendlyReason"
             } else {
                 binding.orderFailureReason.visibility = View.GONE
             }
