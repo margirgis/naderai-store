@@ -601,19 +601,33 @@ object TaskScanner {
         // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────
         // "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ 15:54 26-08-13. رقم العملية: 022655099780"
         // "تم استلام مبلغ 5.10 جنيه من 01222692182؛ المسجل بإسم نادر اكرام راغب مينا على رقم محفظتك 01097273680 ..."
+        // ── officialVFRegex v2: يدعم كلا التنسيقين ─────────────────────────
+        // تنسيق 1 (متعدد الأسطر الجديد):
+        //   "تم استلام مبلغ 5.40 جنيه من رقم 01222692182 المسجل بإسم نادر اكرام راغب مينا على رقم محفظتك 01097273680.\nرصيدك الحالي:...\nرقم العملية: 022768543034"
+        // تنسيق 2 (السطر الواحد القديم):
+        //   "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ ... رقم العملية: 022655099780"
+        // الفرق الرئيسي: الفاصل بعد الرقم قد يكون مسافة أو ؛ أو . أو ,
         val officialVFRegex = Regex(
-            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})\s*[:؛.]?\s*المسجل\s+بإسم\s+([A-Za-z][A-Za-z0-9\s]{1,40}|[\u0600-\u06FF\s]{2,40})\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})\s+.*?\s*(?:بتاريخ|تاريخ العملية[:\s]+)\d{1,2}:\d{2}\s+\d{2}-\d{2}-\d{2,4}.*?(?:رقم\s+العملية|رقم العملية)[:\s]+([A-Za-z0-9]+)""",
+            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})""" +
+            """(?:\s*[؛;.,]\s*|\s+)""" +                    // فاصل مرن: ؛ أو ; أو . أو , أو مسافة
+            """المسجل\s+بإسم\s+""" +
+            """([\u0600-\u06FFA-Za-z][\u0600-\u06FFA-Za-z0-9 ]{1,60}?)""" +  // اسم عربي أو إنجليزي
+            """\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})""",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
+        // رقم العملية يُستخرج بشكل منفصل (قد يكون في سطر مختلف)
+        val txRegexOfficial = Regex("""رقم\s+العملية[:\s]+([0-9]{9,20})""")
+
         val om = officialVFRegex.find(text)
         if (om != null) {
+            val txMatch = txRegexOfficial.find(text)
             return ParsedSms(
-                senderPhone  = om.groupValues[2].trim(),
-                senderName   = om.groupValues[3].trim(),
-                amount       = om.groupValues[1].replace(",", "").toDoubleOrNull(),
-                transactionId= om.groupValues[5].trim(),
-                body         = text,
-                date         = System.currentTimeMillis(),
+                senderPhone    = om.groupValues[2].trim(),
+                senderName     = om.groupValues[3].trim(),
+                amount         = om.groupValues[1].replace(",", "").toDoubleOrNull(),
+                transactionId  = txMatch?.groupValues?.get(1)?.trim(),
+                body           = text,
+                date           = System.currentTimeMillis(),
                 receiverWallet = om.groupValues[4].trim()
             )
         }
