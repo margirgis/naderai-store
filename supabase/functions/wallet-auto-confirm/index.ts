@@ -273,6 +273,7 @@ Deno.serve(async (req: Request) => {
     const reassignedFromOffline = (retryResult as any)?.reassigned_from_offline ?? 0;
     const reopenedExpired = (retryResult as any)?.reopened_expired ?? 0;
 
+
     const { data: result } = await db.rpc('get_device_pending_tasks', {
       p_device_id: payload.device_id,
     });
@@ -312,6 +313,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+
     return jsonResponse({
       ok: true,
       action: 'heartbeat',
@@ -321,6 +323,7 @@ Deno.serve(async (req: Request) => {
       newly_dispatched: newlyDispatched,
       reassigned_from_offline: reassignedFromOffline,
       reopened_expired: reopenedExpired,
+
     });
   }
 

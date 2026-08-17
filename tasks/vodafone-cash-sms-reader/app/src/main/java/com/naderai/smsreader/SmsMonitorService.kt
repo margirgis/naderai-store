@@ -91,6 +91,7 @@ class SmsMonitorService : Service() {
                 if (TaskResultCache.get(context, task.taskId) != null) return@forEach
                 processTask(context, task, webhookUrl ?: "", secret ?: "")
             }
+
 }
 
         private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
@@ -115,6 +116,7 @@ class SmsMonitorService : Service() {
                             context,
                             task,
                             TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب منذ فترة طويلة"),
+
                             webhookUrl,
                             secret
                         ) { _ -> }
@@ -190,6 +192,7 @@ class SmsMonitorService : Service() {
                     AppState.updateOrderScanProgress(task.requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
                     TaskResultCache.remove(context, task.taskId)
                 }
+
                 // لو task_id مش موجود، الطلب ده مش له مهمة فحص — تجاهله
                 if (task.taskId.isBlank()) {
                     android.util.Log.w("SmsMonitorService",

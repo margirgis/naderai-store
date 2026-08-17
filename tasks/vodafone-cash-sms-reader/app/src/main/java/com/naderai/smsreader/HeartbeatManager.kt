@@ -211,6 +211,7 @@ class HeartbeatManager(
                     ))
                 }
 
+
                 if (!seenTaskIds.add(taskId)) {
                     android.util.Log.w("HeartbeatManager", "Duplicate task_id in heartbeat: $taskId")
                     OrderEventLogger.duplicateIgnored(requestId, existingOrder?.orderNumber, taskId)

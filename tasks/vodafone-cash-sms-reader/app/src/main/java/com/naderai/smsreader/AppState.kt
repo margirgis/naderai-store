@@ -47,6 +47,7 @@ object AppState {
                     order.status == OrderStatus.PENDING -> OrderStatus.PENDING
                     // الباقي نحافظ على الحالة المحلية
                     else -> existing.status
+
                 }
                 // نحافظ على البيانات الحساسة (task_id, expiry) إذا كانت موجودة في السيرفر
                 currentMap[order.requestId] = order.copy(
@@ -242,6 +243,7 @@ object AppState {
             } else {
                 order
             }
+
         } else {
             current.add(0, order)
         }

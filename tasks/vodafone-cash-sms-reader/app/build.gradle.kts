@@ -13,6 +13,7 @@ android {
         targetSdk = 34
         versionCode = 30
         versionName = "1.1.19"
+
     }
 
     signingConfigs {
