@@ -105,7 +105,8 @@ class OrderSyncManager(
                 creditsRequested = obj.optInt("credits_requested", 0).takeIf { it > 0 },
                 customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                 customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
-                customerName = obj.optString("sender_name").takeIf { it.isNotEmpty() },
+                customerName = obj.optString("customer_name").takeIf { it.isNotEmpty() }
+                    ?: obj.optString("sender_name").takeIf { it.isNotEmpty() },
                 paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                 taskId = obj.optString("task_id").takeIf { it.isNotEmpty() },
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
@@ -131,6 +132,7 @@ class OrderSyncManager(
                 creditsRequested = if (obj.has("credits_requested") && !obj.isNull("credits_requested")) obj.getInt("credits_requested") else null,
                 customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                 customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
+                customerName = obj.optString("customer_name").takeIf { it.isNotEmpty() },
                 paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                 requestCreatedAt = obj.optString("request_created_at").takeIf { it.isNotEmpty() },
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
