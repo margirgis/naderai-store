@@ -8,7 +8,8 @@ import com.naderai.appstore.BuildConfig
 
 /**
  * يزامن المهام مع السيرفر بشكل دوري.
- * عند التشغيل يرسل heartbeat فورًا، ثم كل 120 ثانية.
+ * عند التشغيل يرسل heartbeat فورًا، ثم كل 15 ثانية كحل مؤقت
+ * إلى أن يتم نقل توزيع المهام إلى Realtime/Push حقيقي.
  */
 class HeartbeatManager(
     private val context: Context,
@@ -22,7 +23,7 @@ class HeartbeatManager(
     private val deviceId get() = DeviceInfo.getDeviceId(context)
 
     companion object {
-        private const val HEARTBEAT_INTERVAL_MS = 120_000L
+        private const val HEARTBEAT_INTERVAL_MS = 15_000L
     }
 
     private val heartbeatRunnable = object : Runnable {
@@ -34,7 +35,6 @@ class HeartbeatManager(
 
     fun start() {
         registerDevice()
-        // لا ننتظر دقيقتين عند تشغيل التطبيق/الخدمة.
         sendHeartbeat()
         handler.removeCallbacks(heartbeatRunnable)
         handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
