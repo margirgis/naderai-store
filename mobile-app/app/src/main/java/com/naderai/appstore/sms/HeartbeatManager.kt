@@ -41,6 +41,11 @@ class HeartbeatManager(
         Log.d(TAG, "HeartbeatManager started — interval=${HEARTBEAT_INTERVAL_MS}ms")
     }
 
+    /** تنفيذ مزامنة فورية بدون انتظار الـ interval. */
+    fun refreshNow() {
+        handler.post { sendHeartbeat() }
+    }
+
     fun stop() {
         handler.removeCallbacks(heartbeatRunnable)
         Log.d(TAG, "HeartbeatManager stopped")
@@ -92,9 +97,9 @@ class HeartbeatManager(
     private fun parsePendingTasks(responseBody: String) {
         try {
             val json = org.json.JSONObject(responseBody)
-            val arr = json.optJSONArray("tasks")
+            val arr = json.optJSONArray("pending_tasks") ?: json.optJSONArray("tasks")
             if (arr == null) {
-                Log.w(TAG, "Heartbeat response has no tasks array")
+                Log.w(TAG, "Heartbeat response has no pending_tasks/tasks array")
                 return
             }
 
@@ -119,7 +124,6 @@ class HeartbeatManager(
             }
 
             Log.d(TAG, "Received ${tasks.size} pending tasks")
-            // مهم: حتى لو القائمة فارغة، نرسل callback حتى لا تظل مهام قديمة في الذاكرة.
             onPendingTasks(tasks)
         } catch (e: Exception) {
             Log.e(TAG, "parsePendingTasks error: ${e.message}")
