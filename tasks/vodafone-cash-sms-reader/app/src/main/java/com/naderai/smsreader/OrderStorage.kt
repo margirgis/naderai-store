@@ -19,9 +19,18 @@ object OrderStorage {
         context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
     /**
-     * يمسح التخزين المحلي إذا تغيّر إصدار التطبيق.
-     * يُستخدم عند التحديثات الكبرى لتجنّب عرض طلبات قديمة أو تالفة.
+     * تسجيل إصدار التطبيق بدون مسح أي طلبات.
+     * الطلبات تُحضَر من السيرفر عند كل heartbeat — لا يجوز حذفها محلياً.
      */
+    fun markVersion(context: Context, versionName: String) {
+        getPrefs(context).edit().putString(KEY_VERSION, versionName).apply()
+    }
+
+    /**
+     * يمسح التخزين المحلي إذا تغيّر إصدار التطبيق.
+     * @deprecated استخدم markVersion بدلاً منها — حذف الطلبات عند التحديث خطأ.
+     */
+    @Deprecated("Never wipe orders on update — use markVersion", ReplaceWith("markVersion(context, versionName)"))
     fun clearIfVersionChanged(context: Context, versionName: String) {
         val prefs = getPrefs(context)
         val stored = prefs.getString(KEY_VERSION, null)

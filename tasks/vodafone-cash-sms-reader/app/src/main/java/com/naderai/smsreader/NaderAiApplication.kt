@@ -28,8 +28,11 @@ class NaderAiApplication : Application() {
             Thread.getDefaultUncaughtExceptionHandler()?.uncaughtException(thread, throwable)
         }
 
-        // عند تحديث التطبيق نمسح التخزين المحلي لتجنّب ظهور طلبات قديمة
-        OrderStorage.clearIfVersionChanged(this, BuildConfig.VERSION_NAME)
+        // P0 FIX: NEVER wipe pending orders on app update.
+        // Orders are fetched from server on next heartbeat; local cache is just a display layer.
+        // Old call was: OrderStorage.clearIfVersionChanged(this, BuildConfig.VERSION_NAME)
+        // The version is only stored now for diagnostic purposes — no cache wipe.
+        OrderStorage.markVersion(this, BuildConfig.VERSION_NAME)
 
         // تحميل الطلبات المحلية عند بدء التطبيق
         try {

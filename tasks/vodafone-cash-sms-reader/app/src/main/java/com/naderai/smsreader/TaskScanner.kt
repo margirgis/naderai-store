@@ -158,6 +158,30 @@ object TaskScanner {
             return ScanResult.Failure("رقم المحوّل في الطلب غير صالح")
         }
 
+        // ── P2 FIX: فحص الطابور المحلي أولاً (SMS وصلت قبل task) ────────
+        val queued = LocalSmsQueue.findMatch(context, task)
+        if (queued != null) {
+            Log.d(TAG, "Queue HIT for task ${task.taskId}: txId=${queued.transactionId} amount=${queued.amount}")
+            // حذف من الطابور بعد المطابقة
+            LocalSmsQueue.remove(context, queued.transactionId)
+            return ScanResult.Success(
+                ScannedMessage(
+                    sender        = queued.senderPhone ?: normalizedRequested,
+                    senderPhone   = queued.senderPhone,
+                    senderName    = queued.senderName,
+                    amount        = queued.amount,
+                    transactionId = queued.transactionId,
+                    body          = queued.smsBody,
+                    date          = queued.receivedAt,
+                    amountMatch   = true,
+                    phoneMatch    = true,
+                    score         = 100,
+                    receiverWallet = queued.receiverWallet
+                )
+            )
+        }
+        Log.d(TAG, "Queue MISS for task ${task.taskId} — falling through to inbox scan")
+
         val cursor = context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(
@@ -184,8 +208,13 @@ object TaskScanner {
 
                     // المبلغ المطلوب: fingerprintAmount لو موجود، وإلا amountRequested
                     val targetAmount = task.fingerprintAmount ?: task.amountRequested
+                    // P0 FIX: Amount must match EXACTLY to the piaster.
+                    // Round both to 2 decimal places to handle float imprecision.
+                    // Any tolerance larger than 0.004 (rounding noise only) is a security risk.
                     val amountMatch = if (targetAmount > 0 && amount != null) {
-                        kotlin.math.abs(targetAmount - amount) <= 0.01
+                        val roundedTarget = Math.round(targetAmount * 100)
+                        val roundedActual = Math.round(amount * 100)
+                        roundedTarget == roundedActual
                     } else false
 
                     // phoneMatch: صح لو رقم المُرسِل في SMS = الرقم المطلوب
