@@ -8,38 +8,31 @@ import android.util.Log
 /**
  * يحلل رسائل Vodafone Cash ويستخرج منها:
  * - المبلغ المحول
- * - رقم ورقم المرسل
+ * - رقم المرسل
  * - اسم المرسل
  * - رقم العملية
  * - محفظة المستلم
- *
- * يدعم أيضاً:
- * - اختبار تحليل رسالة واحدة (testParseSms)
- * - فحص صندوق الرسائل الوارد (scanInboxForTest)
  */
 object TaskScanner {
 
     private val TAG = "TaskScanner"
 
-    // أنماط رسائل Vodafone Cash الرسمية
     private val VODAFONE_NUMBERS = setOf(
         "VOD-CASH", "VodafoneCash", "Vodafone Cash",
         "Vodafone", "01010", "01011", "2olo",
         "VODAFONE", "vodafonecash"
     )
 
-    // نمط استخراج المبلغ (مثال: 5.06 EGP أو 5.06 جنيه)
     private val AMOUNT_PATTERNS = listOf(
-        Regex("""تم استلام\s+([\d,]+(?:\.\d+)?)\s*(?:جنيه|EGP|ج\.م)"""),
-        Regex("""received\s+([\d,]+(?:\.\d+)?)\s*(?:EGP|egp)"""),
-        Regex("""([\d,]+(?:\.\d+)?)\s*(?:جنيه|EGP|ج\.م)\s*من"""),
-        Regex("""charged\s+([\d,]+(?:\.\d+)?)\s*EGP"""),
-        Regex("""استلمت\s+([\d,]+(?:\.\d+)?)\s*(?:جنيه|EGP)"""),
-        Regex("""تحويل مبلغ\s+([\d,]+(?:\.\d+)?)"""),
-        Regex("""([\d,]+(?:\.\d+)?)\s*EGP"""),
+        Regex("""تم استلام\s+([\d,]+(?:\.\d{1,2})?)\s*(?:جنيه|EGP|ج\.م)"""),
+        Regex("""received\s+([\d,]+(?:\.\d{1,2})?)\s*(?:EGP|egp)"""),
+        Regex("""([\d,]+(?:\.\d{1,2})?)\s*(?:جنيه|EGP|ج\.م)\s*من"""),
+        Regex("""charged\s+([\d,]+(?:\.\d{1,2})?)\s*EGP"""),
+        Regex("""استلمت\s+([\d,]+(?:\.\d{1,2})?)\s*(?:جنيه|EGP)"""),
+        Regex("""تحويل مبلغ\s+([\d,]+(?:\.\d{1,2})?)"""),
+        Regex("""([\d,]+(?:\.\d{1,2})?)\s*EGP"""),
     )
 
-    // نمط استخراج رقم المرسل
     private val SENDER_PHONE_PATTERNS = listOf(
         Regex("""من\s+(\+?01\d{9})"""),
         Regex("""from\s+(\+?01\d{9})"""),
@@ -47,23 +40,23 @@ object TaskScanner {
         Regex("""(\+?01\d{9})"""),
     )
 
-    // نمط استخراج اسم المرسل
     private val SENDER_NAME_PATTERNS = listOf(
+        Regex("""المسجل\s+بإسم\s+([^\n]{2,60}?)\s+على"""),
+        Regex("""بإسم\s+([^\n]{2,60}?)\s+على"""),
         Regex("""من\s+([^0-9\n]{2,40}?)\s+(?:رقم|إلى|بتاريخ|\()"""),
         Regex("""from\s+([A-Za-z\s]{2,40}?)\s+(?:number|to|on)"""),
-        Regex("""من\s+([^\d\n]{2,30})"""),
     )
 
-    // نمط رقم العملية
     private val TX_ID_PATTERNS = listOf(
-        Regex("""رقم العملية[:\s]+(\d+)"""),
-        Regex("""Transaction ID[:\s]+(\d+)"""),
-        Regex("""Ref[.:\s]+(\d+)"""),
-        Regex("""رقم المرجع[:\s]+(\d+)"""),
+        Regex("""رقم العملية[:\s]+(\d{6,})"""),
+        Regex("""Transaction ID[:\s]+([A-Za-z0-9-]{6,})""", RegexOption.IGNORE_CASE),
+        Regex("""Ref[.:\s]+([A-Za-z0-9-]{6,})""", RegexOption.IGNORE_CASE),
+        Regex("""رقم المرجع[:\s]+([A-Za-z0-9-]{6,})"""),
     )
 
-    // نمط محفظة المستلم
     private val RECEIVER_PATTERNS = listOf(
+        Regex("""على رقم محفظتك\s+(\+?01\d{9})"""),
+        Regex("""على\s+(\+?01\d{9})"""),
         Regex("""إلى\s+(\+?01\d{9})"""),
         Regex("""to\s+(\+?01\d{9})"""),
     )
@@ -82,10 +75,12 @@ object TaskScanner {
         val requestId: String,
         val amountRequested: Double,
         val senderPhoneRequested: String?,
-        val fingerprintAmount: Double?
+        val fingerprintAmount: Double?,
+        val senderNameRequested: String? = null,
+        val receiverWalletRequested: String? = null,
+        val transactionIdExpected: String? = null,
     )
 
-    /** هل هذه رسالة فودافون كاش رسمية؟ */
     fun isOfficialVodafoneCashMessage(body: String): Boolean {
         val lower = body.lowercase()
         return lower.contains("vodafone") || lower.contains("فودافون") ||
@@ -93,10 +88,8 @@ object TaskScanner {
             lower.contains("محفظة") || lower.contains("تحويل مبلغ")
     }
 
-    /** تحليل رسالة واحدة واستخراج البيانات */
     fun testParseSms(body: String): ParsedSms = parseSms(body)
 
-    /** فحص صندوق الوارد وإرجاع رسائل Vodafone Cash */
     fun scanInboxForTest(context: Context, limit: Int = 50): List<ParsedSms> {
         val results = mutableListOf<ParsedSms>()
         try {
@@ -125,49 +118,80 @@ object TaskScanner {
     }
 
     /**
-     * يفحص SMS الوارد ويطابقه مع مهمة من السيرفر.
-     * يُعيد true إذا كان المبلغ يتطابق ضمن هامش 0.50 جنيه.
+     * يطابق رسالة مع المهمة باستخدام المبلغ الدقيق، ثم رقم المرسل إن توفر،
+     * ويمنع القبول إذا كان المبلغ غير مطابق أو بيانات المطابقة الأساسية غير متوافقة.
+     * لا يوجد أي tolerance بالقروش؛ المقارنة تتم بوحدات القرش لتجنب أخطاء Double.
      */
     fun matchSmsToTask(smsBody: String, task: Task): Boolean {
         if (!isOfficialVodafoneCashMessage(smsBody)) return false
         val parsed = parseSms(smsBody)
         val amount = parsed.amount ?: return false
         val target = task.fingerprintAmount ?: task.amountRequested
-        val diff = Math.abs(amount - target)
-        Log.d(TAG, "Match check: sms=${amount}, task=${target}, diff=${diff}")
-        return diff <= 0.50
+
+        val smsCents = toCents(amount) ?: return false
+        val targetCents = toCents(target) ?: return false
+        if (smsCents != targetCents) {
+            Log.d(TAG, "Reject amount mismatch: sms=${smsCents}c task=${targetCents}c")
+            return false
+        }
+
+        val expectedPhone = normalizePhone(task.senderPhoneRequested)
+        val actualPhone = normalizePhone(parsed.senderPhone)
+        if (!expectedPhone.isNullOrEmpty()) {
+            if (actualPhone.isNullOrEmpty()) {
+                Log.d(TAG, "Reject missing sender phone for task ${task.taskId}")
+                return false
+            }
+            if (expectedPhone != actualPhone) {
+                Log.d(TAG, "Reject sender phone mismatch for task ${task.taskId}")
+                return false
+            }
+        }
+
+        val expectedReceiver = normalizePhone(task.receiverWalletRequested)
+        if (!expectedReceiver.isNullOrEmpty()) {
+            val actualReceiver = normalizePhone(parsed.receiverWallet)
+            if (actualReceiver.isNullOrEmpty() || expectedReceiver != actualReceiver) {
+                Log.d(TAG, "Reject receiver wallet mismatch for task ${task.taskId}")
+                return false
+            }
+        }
+
+        if (!task.transactionIdExpected.isNullOrBlank()) {
+            if (parsed.transactionId.isNullOrBlank() || parsed.transactionId != task.transactionIdExpected) {
+                Log.d(TAG, "Reject transaction ID mismatch for task ${task.taskId}")
+                return false
+            }
+        }
+
+        return true
     }
 
-    /** يُنشئ payload لإرسال نتيجة الفحص للسيرفر */
     fun buildResultPayload(
         taskId: String,
         smsBody: String,
         matched: Boolean,
         failureReason: String? = null
     ): Map<String, Any> {
-        val parsed = if (matched) parseSms(smsBody) else ParsedSms(null, null, null, null, null, smsBody)
+        val parsed = parseSms(smsBody)
         return buildMap {
             put("action", "sms_scan_result")
             put("task_id", taskId)
             put("matched", matched)
             put("sms_body", smsBody)
-            if (matched) {
-                parsed.amount?.let { put("confirmed_amount", it) }
-                parsed.senderPhone?.let { put("sender_phone", it) }
-                parsed.senderName?.let { put("sender_name", it) }
-                parsed.transactionId?.let { put("transaction_id", it) }
-            } else {
-                put("failure_reason", failureReason ?: "لم يتم العثور على تطابق")
-            }
+            parsed.amount?.let { put("confirmed_amount", it) }
+            parsed.senderPhone?.let { put("sender_phone", it) }
+            parsed.senderName?.let { put("sender_name", it) }
+            parsed.transactionId?.let { put("transaction_id", it) }
+            parsed.receiverWallet?.let { put("receiver_wallet", it) }
+            if (!matched) put("failure_reason", failureReason ?: "لم يتم العثور على تطابق")
         }
     }
-
-    // ── Private helpers ──────────────────────────────────────────────────────
 
     private fun parseSms(body: String): ParsedSms {
         val amount = extractAmount(body)
         val senderPhone = extractFirst(SENDER_PHONE_PATTERNS, body)
-        val senderName = extractFirst(SENDER_NAME_PATTERNS, body)?.trim()
+        val senderName = extractFirst(SENDER_NAME_PATTERNS, body)?.trim()?.replace(Regex("\\s+"), " ")
         val transactionId = extractFirst(TX_ID_PATTERNS, body)
         val receiverWallet = extractFirst(RECEIVER_PATTERNS, body)
         return ParsedSms(amount, senderPhone, senderName, transactionId, receiverWallet, body)
@@ -188,6 +212,22 @@ object TaskScanner {
             if (m.groupValues.size > 1) return m.groupValues[1].trim()
         }
         return null
+    }
+
+    private fun toCents(value: Double): Long? {
+        if (!value.isFinite() || value < 0) return null
+        return kotlin.math.round(value * 100.0).toLong()
+    }
+
+    private fun normalizePhone(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val digits = raw.filter(Char::isDigit)
+        return when {
+            digits.length == 11 && digits.startsWith("01") -> digits.substring(1)
+            digits.length == 12 && digits.startsWith("20") -> digits.substring(2)
+            digits.length == 10 && digits.startsWith("1") -> digits
+            else -> digits.ifBlank { null }
+        }
     }
 
     private fun isRelevantSender(address: String): Boolean {
