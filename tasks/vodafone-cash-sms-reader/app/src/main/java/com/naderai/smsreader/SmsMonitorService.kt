@@ -112,13 +112,13 @@ class SmsMonitorService : Service() {
                         android.util.Log.w("SmsMonitorService",
                             "Task ${task.taskId}: order expired long ago (${task.orderExpiresAt}) — rejecting immediately")
                         TaskScanner.sendTaskResult(
-                            context,
-                            task,
-                            TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب منذ فترة طويلة"),
-
-                            webhookUrl,
-                            secret
-                        ) { _ -> }
+                            context = context,
+                            task = task,
+                            result = TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب منذ فترة طويلة"),
+                            webhookUrl = webhookUrl,
+                            secret = secret,
+                            onSent = { _ -> }
+                        )
                         return
                     }
                 } catch (e: Exception) {

@@ -81,16 +81,6 @@ object TaskScanner {
         val orderExpiresAt: String?
     )
 
-    data class ParsedSms(
-        val senderPhone: String?,
-        val senderName: String?,
-        val amount: Double?,
-        val transactionId: String?,
-        val body: String,
-        val date: Long,
-        val receiverWallet: String? = null
-    )
-
     /**
      * يفحص صندوق الرسائل كل 20 ثانية — حد أقصى 3 مرات (دقيقة واحدة).
      * لو لقى تطابق يبعت النتيجة فوراً. لو انتهت المحاولات يبعت آخر نتيجة.
@@ -119,9 +109,17 @@ object TaskScanner {
                 type = NotificationType.ERROR,
                 referenceId = task.requestId
             ))
-            sendTaskResult(context, task, ScanResult.Failure("خطأ داخلي: ${e.message}"), webhookUrl, secret) { _ ->
-                onResult?.invoke(ScanResult.Failure("خطأ داخلي: ${e.message}"), false)
-            }
+            sendTaskResult(
+                context = context,
+                task = task,
+                result = ScanResult.Failure("خطأ داخلي: ${e.message}"),
+                webhookUrl = webhookUrl,
+                secret = secret,
+                onSent = { _ ->
+                    onResult?.invoke(ScanResult.Failure("خطأ داخلي: ${e.message}"), false)
+                    Unit
+                }
+            )
         }
 
         CoroutineScope(Dispatchers.IO + SupervisorJob() + handler).launch {
@@ -151,9 +149,17 @@ object TaskScanner {
                 if (lastResult is ScanResult.Success) {
                     lastResult.message.transactionId?.let { LocalSmsQueue.remove(context, it) }
                 }
-                sendTaskResult(context, task, lastResult, webhookUrl, secret) { success ->
-                    onResult?.invoke(lastResult, success)
-                }
+                sendTaskResult(
+                    context = context,
+                    task = task,
+                    result = lastResult,
+                    webhookUrl = webhookUrl,
+                    secret = secret,
+                    onSent = { success ->
+                        onResult?.invoke(lastResult, success)
+                        Unit
+                    }
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "Scan exception for task ${task.taskId}: ${e.message}", e)
                 throw e
@@ -502,7 +508,8 @@ object TaskScanner {
         task: Task,
         cached: TaskResultCache.CachedResult,
         webhookUrl: String,
-        secret: String
+        secret: String,
+        onSent: ((Boolean) -> Unit)? = null
     ) {
         val resultData = cached.resultData?.let {
             try {
