@@ -17,10 +17,16 @@ android {
 
     signingConfigs {
         create("release") {
+            val keystorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                ?: error("RELEASE_KEYSTORE_PASSWORD must be set for release builds")
+            val keyAliasValue = System.getenv("RELEASE_KEY_ALIAS")
+                ?: error("RELEASE_KEY_ALIAS must be set for release builds")
+            val keyPasswordValue = System.getenv("RELEASE_KEY_PASSWORD")
+                ?: error("RELEASE_KEY_PASSWORD must be set for release builds")
             storeFile = file("../signing/release.keystore")
-            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() } ?: "naderai2024"
-            keyAlias = System.getenv("RELEASE_KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "naderai"
-            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")?.takeIf { it.isNotBlank() } ?: "naderai2024"
+            storePassword = keystorePassword
+            keyAlias = keyAliasValue
+            keyPassword = keyPasswordValue
         }
     }
 
