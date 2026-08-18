@@ -103,7 +103,7 @@ class OrdersFragment : Fragment() {
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                         if (success) {
                             AppState.onTaskResult(manualTask, result)
-                            AppState.updateOrderStatus(order.requestId, OrderStatus.CONFIRMED)
+                            AppState.updateOrderStatus(order.requestId, OrderStatus.COMPLETED)
                             android.widget.Toast.makeText(context, "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             android.widget.Toast.makeText(context, "فشل التأكيد — تحقق من اتصال الإنترنت أو جلسة الأدمن", android.widget.Toast.LENGTH_LONG).show()

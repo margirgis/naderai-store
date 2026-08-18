@@ -4,63 +4,87 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="10dp"
-    app:cardCornerRadius="12dp"
-    app:cardElevation="3dp">
+    app:cardCornerRadius="16dp"
+    app:cardElevation="4dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="14dp">
+        android:padding="16dp">
 
-        <!-- Row 1: Order number + status badge -->
+        <!-- Header: order number + status badge -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="6dp">
+            android:layout_marginBottom="10dp"
+            android:gravity="center_vertical">
 
             <TextView
                 android:id="@+id/orderIdText"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="طلب #—"
-                android:textSize="13sp"
-                android:fontFamily="monospace"
-                android:alpha="0.7" />
+                android:text="طلب شحن #—"
+                android:textSize="15sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/orderStatusBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="4dp"
-                android:text="قيد المراجعة"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:text="قيد الانتظار"
                 android:textColor="@android:color/white"
-                android:textSize="11sp"
-                app:cardCornerRadius="6dp" />
+                android:textSize="12sp"
+                android:background="@drawable/badge_background"
+                android:backgroundTint="@android:color/black" />
         </LinearLayout>
 
-        <!-- Row 2: Amount (big) -->
-        <TextView
-            android:id="@+id/orderAmountText"
+        <!-- Amount -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0.00 جنيه"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="2dp" />
+            android:orientation="horizontal"
+            android:layout_marginBottom="4dp"
+            android:gravity="baseline">
 
-        <!-- Row 3: Credits requested -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="💰 المبلغ المطلوب"
+                android:textSize="13sp"
+                android:alpha="0.7"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/orderAmountText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.00"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/orderCurrencyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="جنيه"
+                android:textSize="14sp"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
+
+        <!-- Credits -->
         <TextView
             android:id="@+id/orderCreditsText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text=""
+            android:text="1 Credit"
             android:textSize="13sp"
-            android:alpha="0.75"
-            android:layout_marginBottom="6dp"
+            android:alpha="0.8"
+            android:layout_marginBottom="10dp"
             android:visibility="gone" />
 
         <!-- Divider -->
@@ -68,54 +92,70 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="#22FFFFFF"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginVertical="10dp" />
 
-        <!-- Row 4: Customer info -->
+        <!-- Customer + sender grid -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="3dp">
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="📱 "
-                android:textSize="12sp" />
+                android:text="👤 العميل"
+                android:textSize="12sp"
+                android:alpha="0.6" />
 
             <TextView
-                android:id="@+id/orderCustomerPhone"
-                android:layout_width="0dp"
+                android:id="@+id/orderCustomerName"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:text="—"
-                android:textSize="13sp"
-                android:fontFamily="monospace" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="6dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="✉️ "
-                android:textSize="12sp" />
+                android:textSize="15sp"
+                android:layout_marginBottom="2dp" />
 
             <TextView
                 android:id="@+id/orderCustomerEmail"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:text="—"
                 android:textSize="12sp"
                 android:alpha="0.7" />
         </LinearLayout>
 
-        <!-- Row 5: Payment method + date -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📱 رقم المحول"
+                android:textSize="12sp"
+                android:alpha="0.6" />
+
+            <TextView
+                android:id="@+id/orderSenderPhone"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textSize="15sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/orderSenderName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textSize="12sp"
+                android:alpha="0.7" />
+        </LinearLayout>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -123,13 +163,19 @@
             android:layout_marginBottom="4dp">
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="💳 طريقة الدفع: "
+                android:textSize="12sp"
+                android:alpha="0.6" />
+
+            <TextView
                 android:id="@+id/orderPaymentMethod"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="—"
-                android:textSize="12sp"
-                android:alpha="0.6" />
+                android:textSize="12sp" />
 
             <TextView
                 android:id="@+id/orderCreatedAt"
@@ -140,15 +186,50 @@
                 android:alpha="0.6" />
         </LinearLayout>
 
+        <!-- Match status -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔎 حالة المطابقة"
+                android:textSize="12sp"
+                android:alpha="0.6"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/orderMatchStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="جاري البحث..."
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/orderMatchAmount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.00"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <!-- Failure reason -->
         <TextView
             android:id="@+id/orderFailureReason"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text=""
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textColor="#EF4444"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:visibility="gone" />
 
         <!-- Transaction ID -->
@@ -160,18 +241,18 @@
             android:textSize="12sp"
             android:fontFamily="monospace"
             android:alpha="0.7"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="4dp"
             android:visibility="gone" />
 
-        <!-- Scan status progress -->
+        <!-- Scan progress -->
         <TextView
             android:id="@+id/orderScanProgress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text=""
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textColor="#3B82F6"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:visibility="gone" />
 
         <!-- Divider before actions -->
@@ -179,7 +260,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="#22FFFFFF"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="12dp"
             android:layout_marginBottom="8dp"
             android:id="@+id/actionDivider"
             android:visibility="gone" />
@@ -197,30 +278,29 @@
                 android:id="@+id/btnStartScan"
                 style="@style/Widget.Material3.Button"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="40dp"
                 android:text="ابدأ الفحص"
                 android:textSize="12sp"
-                android:layout_marginEnd="6dp"
+                android:layout_marginEnd="8dp"
                 android:visibility="gone" />
 
             <Button
                 android:id="@+id/btnRescan"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="40dp"
                 android:text="إعادة فحص"
                 android:textSize="12sp"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="8dp" />
 
             <Button
                 android:id="@+id/btnConfirmManual"
                 style="@style/Widget.Material3.Button"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="40dp"
                 android:text="تأكيد يدوي"
                 android:textSize="12sp" />
         </LinearLayout>
 
     </LinearLayout>
 </androidx.cardview.widget.CardView>
-

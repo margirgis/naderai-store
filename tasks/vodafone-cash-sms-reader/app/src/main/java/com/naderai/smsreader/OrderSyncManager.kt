@@ -24,7 +24,7 @@ class OrderSyncManager(
     }
 
     companion object {
-        private const val SYNC_INTERVAL_MS = 30_000L
+        private const val SYNC_INTERVAL_MS = 10_000L
         private const val TAG = "OrderSyncManager"
 
         /**
@@ -47,9 +47,9 @@ class OrderSyncManager(
             // نفضل عرض result_status (من pending_tasks) ثم scan_status ثم status
             val effectiveStatus = when (resultStatus ?: scanStatus) {
                 "scanning" -> OrderStatus.SCANNING
-                "success" -> OrderStatus.CONFIRMED
-                "verified" -> OrderStatus.FOUND
-                "approved" -> OrderStatus.CONFIRMED
+                "success" -> OrderStatus.COMPLETED
+                "verified" -> OrderStatus.MATCHED
+                "approved" -> OrderStatus.COMPLETED
                 "not_found" -> OrderStatus.NOT_FOUND
                 "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
                 "manual_review" -> OrderStatus.MANUAL_REVIEW
@@ -79,7 +79,7 @@ class OrderSyncManager(
             }
 
             val finalStatus = if (isExpired && effectiveStatus !in setOf(
-                    OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.NOT_FOUND,
+                    OrderStatus.CONFIRMED, OrderStatus.COMPLETED, OrderStatus.FAILED, OrderStatus.NOT_FOUND,
                     OrderStatus.DUPLICATE, OrderStatus.MANUAL_REVIEW
                 )) {
                 OrderStatus.EXPIRED

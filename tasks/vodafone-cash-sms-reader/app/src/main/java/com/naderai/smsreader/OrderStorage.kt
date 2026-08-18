@@ -95,6 +95,33 @@ object OrderStorage {
             put("next_scan_countdown", order.nextScanCountdown)
             put("payment_order_id", order.paymentOrderId ?: JSONObject.NULL)
             put("order_expires_at", order.orderExpiresAt ?: JSONObject.NULL)
+            put("sender_phone_found", order.senderPhoneFound ?: JSONObject.NULL)
+            put("sender_name_found", order.senderNameFound ?: JSONObject.NULL)
+            put("amount_found", order.amountFound ?: JSONObject.NULL)
+            put("receiver_wallet_found", order.receiverWalletFound ?: JSONObject.NULL)
+            put("sms_body_found", order.smsBodyFound ?: JSONObject.NULL)
+            put("scanned_at", order.scannedAt ?: JSONObject.NULL)
+            order.snapshot?.let { put("snapshot", snapshotToJson(it)) }
+        }
+    }
+
+    private fun snapshotToJson(snapshot: OrderSnapshot): JSONObject {
+        return JSONObject().apply {
+            put("request_id", snapshot.requestId)
+            put("order_label", snapshot.orderLabel)
+            put("expected_amount", snapshot.expectedAmount)
+            put("created_at", snapshot.createdAt)
+            put("order_number", snapshot.orderNumber ?: JSONObject.NULL)
+            put("credits_requested", snapshot.creditsRequested ?: JSONObject.NULL)
+            put("customer_email", snapshot.customerEmail ?: JSONObject.NULL)
+            put("customer_phone", snapshot.customerPhone ?: JSONObject.NULL)
+            put("customer_name", snapshot.customerName ?: JSONObject.NULL)
+            put("payment_method", snapshot.paymentMethod ?: JSONObject.NULL)
+            put("sender_phone_requested", snapshot.senderPhoneRequested ?: JSONObject.NULL)
+            put("sender_name_requested", snapshot.senderNameRequested ?: JSONObject.NULL)
+            put("request_created_at", snapshot.requestCreatedAt ?: JSONObject.NULL)
+            put("payment_order_id", snapshot.paymentOrderId ?: JSONObject.NULL)
+            put("order_expires_at", snapshot.orderExpiresAt ?: JSONObject.NULL)
         }
     }
 
@@ -103,7 +130,8 @@ object OrderStorage {
             requestId = json.getString("request_id"),
             orderLabel = json.optString("order_label", "طلب شحن"),
             expectedAmount = json.optDouble("expected_amount", 0.0),
-            status = OrderStatus.valueOf(json.getString("status")),
+            status = json.takeIfString("status")?.let { OrderStatus.fromString(it) }
+                ?: OrderStatus.valueOf(json.getString("status")),
             createdAt = json.getLong("created_at"),
             updatedAt = json.getLong("updated_at"),
             failureReason = json.takeIfString("failure_reason"),
@@ -122,8 +150,43 @@ object OrderStorage {
             maxAttempts = json.optInt("max_attempts", 3),
             nextScanCountdown = json.optInt("next_scan_countdown", 0),
             paymentOrderId = json.takeIfString("payment_order_id"),
+            orderExpiresAt = json.takeIfString("order_expires_at"),
+            senderPhoneFound = json.takeIfString("sender_phone_found"),
+            senderNameFound = json.takeIfString("sender_name_found"),
+            amountFound = json.takeIfDouble("amount_found"),
+            receiverWalletFound = json.takeIfString("receiver_wallet_found"),
+            smsBodyFound = json.takeIfString("sms_body_found"),
+            scannedAt = json.takeIfLong("scanned_at"),
+            snapshot = json.takeIfJSONObject("snapshot")?.let { jsonToSnapshot(it) }
+        )
+    }
+
+    private fun jsonToSnapshot(json: JSONObject): OrderSnapshot {
+        return OrderSnapshot(
+            requestId = json.getString("request_id"),
+            orderLabel = json.optString("order_label", "طلب شحن"),
+            expectedAmount = json.optDouble("expected_amount", 0.0),
+            createdAt = json.getLong("created_at"),
+            orderNumber = json.takeIfLong("order_number"),
+            creditsRequested = json.takeIfInt("credits_requested"),
+            customerEmail = json.takeIfString("customer_email"),
+            customerPhone = json.takeIfString("customer_phone"),
+            customerName = json.takeIfString("customer_name"),
+            paymentMethod = json.takeIfString("payment_method"),
+            senderPhoneRequested = json.takeIfString("sender_phone_requested"),
+            senderNameRequested = json.takeIfString("sender_name_requested"),
+            requestCreatedAt = json.takeIfString("request_created_at"),
+            paymentOrderId = json.takeIfString("payment_order_id"),
             orderExpiresAt = json.takeIfString("order_expires_at")
         )
+    }
+
+    private fun JSONObject.takeIfDouble(key: String): Double? {
+        return if (has(key) && !isNull(key)) optDouble(key, 0.0).takeIf { it != 0.0 } else null
+    }
+
+    private fun JSONObject.takeIfJSONObject(key: String): JSONObject? {
+        return if (has(key) && !isNull(key)) optJSONObject(key) else null
     }
 
     private fun JSONObject.takeIfString(key: String): String? {

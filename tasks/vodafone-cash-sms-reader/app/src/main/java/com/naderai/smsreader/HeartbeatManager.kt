@@ -19,6 +19,9 @@ class HeartbeatManager(
     private var registered = false
 
     companion object {
+        // 10s عند وجود مهام قيد الفحص للحصول على Live Update، 60s في حالة الخمول
+        private const val HEARTBEAT_INTERVAL_ACTIVE_MS = 10_000L
+        private const val HEARTBEAT_INTERVAL_IDLE_MS = 60_000L
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
         const val PREFS_NAME = "naderai_sms_reader"
         const val KEY_DEVICE_ID = "device_id"
@@ -40,14 +43,17 @@ class HeartbeatManager(
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
             sendHeartbeat()
-            handler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+            // تحديد الفاصل حسب وجود مهام قيد الفحص — لتحسين البطارية
+            val hasPending = (AppState.pendingTasks.value?.size ?: 0) > 0
+            val interval = if (hasPending) HEARTBEAT_INTERVAL_ACTIVE_MS else HEARTBEAT_INTERVAL_IDLE_MS
+            handler.postDelayed(this, interval)
         }
     }
 
     fun start() {
         // Always register first, then start heartbeat loop
         registerDevice()
-        handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
+        handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_ACTIVE_MS)
     }
 
     fun stop() {
@@ -59,7 +65,7 @@ class HeartbeatManager(
         handler.removeCallbacks(heartbeatRunnable)
         registerDevice()
         // بعد التسجيل سيرسل Heartbeat أول مباشرةً
-        handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
+        handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_ACTIVE_MS)
     }
 
     /** Explicit device_register call — separate from heartbeat */
@@ -185,31 +191,16 @@ class HeartbeatManager(
                 val taskId = obj.getString("task_id")
 
                 // ══════════════════════════════════════════════════════════════
-                // حماية الحالات النهائية: فقط CONFIRMED تعتبر نهائية.
-                // لاستعادة الوضع الفاشل عند الرينكونيكت: نعيد فتح أي طلب غير مؤكد.
+                // حماية الحالات النهائية: لا نعيد فتح طلب منتهي أو فاشل.
                 // ══════════════════════════════════════════════════════════════
                 val existingOrder = AppState.getOrders().firstOrNull { it.requestId == requestId }
-                if (existingOrder != null && existingOrder.status == OrderStatus.CONFIRMED) {
+                if (existingOrder != null && existingOrder.status.isTerminal()) {
                     android.util.Log.d("HeartbeatManager",
-                        "Skipping confirmed order $requestId (status=${existingOrder.status.name})")
+                        "Skipping terminal order $requestId (status=${existingOrder.status.name})")
                     OrderEventLogger.terminalIgnored(requestId, existingOrder.orderNumber, existingOrder.status.name)
                     continue
                 }
-                // إذا كان الطلب فاشلاً أو منتهياً سابقاً، نعيد فتحه لإعادة الفحص
-                if (existingOrder != null && existingOrder.status != OrderStatus.PENDING) {
-                    AppState.updateOrderStatus(requestId, OrderStatus.PENDING)
-                    AppState.updateOrderScanProgress(requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
-                    TaskResultCache.remove(context, taskId)
-                    android.util.Log.d("HeartbeatManager",
-                        "Reopened order $requestId after reconnect for re-scan")
-                    OrderEventLogger.orderDelivered(requestId, existingOrder.orderNumber, deviceId, "PENDING")
-                    AppState.addNotification(DeviceNotification(
-                        title = "طلب مُعاد فتحه ✓",
-                        message = "طلب ${existingOrder.orderNumber?.let { "#$it" } ?: requestId.take(8)} أصبح متاحاً للفحص مرة أخرى",
-                        type = NotificationType.ORDER_NEW,
-                        referenceId = requestId
-                    ))
-                }
+                // لا نعيد فتح الطلبات الفاشلة/غير المكتملة تلقائياً — يدوي فقط
 
 
                 if (!seenTaskIds.add(taskId)) {

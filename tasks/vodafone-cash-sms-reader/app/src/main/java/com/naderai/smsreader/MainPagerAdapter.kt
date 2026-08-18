@@ -12,13 +12,13 @@ class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activi
         "الكل" to OrdersFragment.newInstance(emptyList()),
         // "قيد المراجعة" يجمع الطلبات الجديدة (pending) وتلك التي بدأ فحصها (scanning)
         // لأن المستخدم يعتبرها كلها تحت المراجعة حتى تكتمل أو تفشل.
-        "قيد المراجعة" to OrdersFragment.newInstance(listOf(OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MANUAL_REVIEW)),
-        "جاري البحث" to OrdersFragment.newInstance(OrderStatus.SCANNING),
-        "تم العثور" to OrdersFragment.newInstance(OrderStatus.FOUND),
-        "تم التأكيد" to OrdersFragment.newInstance(OrderStatus.CONFIRMED),
+        "قيد المراجعة" to OrdersFragment.newInstance(listOf(OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.MANUAL_REVIEW)),
+        "جاري البحث" to OrdersFragment.newInstance(listOf(OrderStatus.SCANNING, OrderStatus.MATCHING)),
+        "تم العثور" to OrdersFragment.newInstance(listOf(OrderStatus.MATCHED, OrderStatus.WAITING_CONFIRMATION)),
+        "تم التأكيد" to OrdersFragment.newInstance(listOf(OrderStatus.CONFIRMED, OrderStatus.COMPLETED)),
         "غير مطابق" to OrdersFragment.newInstance(listOf(OrderStatus.AMOUNT_MISMATCH, OrderStatus.MANUAL_REVIEW)),
         "لم يوجد" to OrdersFragment.newInstance(OrderStatus.NOT_FOUND),
-        "منتهي" to OrdersFragment.newInstance(OrderStatus.EXPIRED),
+        "منتهي" to OrdersFragment.newInstance(listOf(OrderStatus.EXPIRED, OrderStatus.DUPLICATE)),
         "فشل" to OrdersFragment.newInstance(OrderStatus.FAILED),
         "تشخيص" to DiagnosticsFragment(),
         "الإعدادات" to SettingsFragment()

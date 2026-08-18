@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.Collections
 
 /**
  * Scans device SMS inbox for a task's matching Vodafone Cash message.
@@ -48,6 +49,15 @@ object TaskScanner {
         "you have sent",
         "you transferred"
     )
+
+    /** حماية من تشغيل أكثر من Scanner على نفس المهمة في نفس الوقت */
+    private val activeScanJobs = Collections.synchronizedSet(mutableSetOf<String>())
+
+    fun isScanning(taskId: String): Boolean = activeScanJobs.contains(taskId)
+
+    fun clearScanLock(taskId: String) {
+        activeScanJobs.remove(taskId)
+    }
 
     data class Task(
         val taskId: String,
@@ -93,8 +103,15 @@ object TaskScanner {
         secret: String,
         onResult: ((ScanResult, Boolean) -> Unit)? = null
     ) {
+        // منع تكرار الفحص: نفس task لا يبدأ Scan إلا مرة واحدة في نفس الوقت
+        if (!activeScanJobs.add(task.taskId)) {
+            Log.d(TAG, "Scan already in progress for task ${task.taskId}; skipping duplicate")
+            return
+        }
+
         val handler = CoroutineExceptionHandler { _, e ->
             Log.e(TAG, "Scan crashed for task ${task.taskId}: ${e.message}", e)
+            activeScanJobs.remove(task.taskId)
             AppState.updateOrderStatus(task.requestId, OrderStatus.FAILED)
             AppState.addNotification(DeviceNotification(
                 title = "تعطّل الفحص",
@@ -131,12 +148,18 @@ object TaskScanner {
                 }
                 // إرسال النتيجة النهائية مرة واحدة فقط
                 AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
+                if (lastResult is ScanResult.Success) {
+                    lastResult.message.transactionId?.let { LocalSmsQueue.remove(context, it) }
+                }
                 sendTaskResult(context, task, lastResult, webhookUrl, secret) { success ->
                     onResult?.invoke(lastResult, success)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Scan exception for task ${task.taskId}: ${e.message}", e)
                 throw e
+            } finally {
+                activeScanJobs.remove(task.taskId)
+                Log.d(TAG, "Scan ended for task ${task.taskId}")
             }
         }
     }
@@ -201,9 +224,9 @@ object TaskScanner {
                 val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
                 val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
 
-                if (isOfficialVodafoneCashMessage(body)) {
-                    val parsed = parseSmsBody(body)
-                    val normalizedSender = normalizeEgyptianPhone(parsed.senderPhone ?: sender)
+                if (SmsParser.isOfficialReceivedMessage(body)) {
+                    val parsed = SmsParser.parseReceived(body)
+                    val normalizedSender = parsed.senderPhone ?: normalizeEgyptianPhone(sender)
                     val amount = parsed.amount
 
                     // المبلغ المطلوب: fingerprintAmount لو موجود، وإلا amountRequested
@@ -272,7 +295,8 @@ object TaskScanner {
         result: ScanResult,
         webhookUrl: String,
         secret: String,
-        onSent: ((Boolean) -> Unit)? = null
+        onSent: ((Boolean) -> Unit)? = null,
+        notifyUi: Boolean = true
     ) {
         val idempotencyKey = "${task.taskId}-${task.requestId}"
         val resultStatus = when (result) {
@@ -292,11 +316,11 @@ object TaskScanner {
             )
             if (!adminUrl.isNullOrEmpty()) {
                 Log.d(TAG, "Sending task result via admin endpoint for task ${task.taskId}")
-                sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus) { success ->
+                sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus, onSent, notifyUi) { success ->
                     if (!success && webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
                         // fallback: لو فشل admin endpoint، جرب webhook العادي
                         Log.w(TAG, "Admin endpoint failed, falling back to webhook for task ${task.taskId}")
-                        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent)
+                        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent, notifyUi)
                     } else {
                         onSent?.invoke(success)
                     }
@@ -307,12 +331,12 @@ object TaskScanner {
 
         if (webhookUrl.isEmpty() || secret.isEmpty()) {
             Log.w(TAG, "No webhook or admin config available; cannot send task result for ${task.taskId}")
-            taskResultCallback?.invoke(task, result)
+            if (notifyUi) taskResultCallback?.invoke(task, result)
             onSent?.invoke(false)
             return
         }
 
-        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent)
+        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent, notifyUi)
     }
 
     private fun sendViaWebhook(
@@ -323,7 +347,8 @@ object TaskScanner {
         secret: String,
         resultStatus: String,
         idempotencyKey: String,
-        onSent: ((Boolean) -> Unit)? = null
+        onSent: ((Boolean) -> Unit)? = null,
+        notifyUi: Boolean = true
     ) {
         val body = mutableMapOf<String, Any>(
             "action" to "task_result",
@@ -361,7 +386,7 @@ object TaskScanner {
 
         WebhookSender.sendJsonWithBody(webhookUrl, secret, body) { success, msg, _ ->
             Log.d(TAG, "Webhook task result sent: $success — $msg")
-            taskResultCallback?.invoke(task, result)
+            if (notifyUi) taskResultCallback?.invoke(task, result)
             onSent?.invoke(success)
         }
     }
@@ -373,7 +398,9 @@ object TaskScanner {
         result: ScanResult,
         idempotencyKey: String,
         resultStatus: String,
-        onSent: ((Boolean) -> Unit)? = null
+        onSent: ((Boolean) -> Unit)? = null,
+        notifyUi: Boolean = true,
+        onComplete: ((Boolean) -> Unit)? = null
     ) {
         val accessToken = AdminSession.accessToken(context) ?: return
         val refreshToken = AdminSession.refreshToken(context)
@@ -460,8 +487,9 @@ object TaskScanner {
                     Log.w(TAG, "Failed to parse refreshed tokens: ${e.message}")
                 }
             }
-            taskResultCallback?.invoke(task, result)
+            if (notifyUi) taskResultCallback?.invoke(task, result)
             onSent?.invoke(success)
+            onComplete?.invoke(success)
         }
     }
 
@@ -536,13 +564,14 @@ object TaskScanner {
             else -> ScanResult.Failure(cached.failureReason ?: "خطأ تقني")
         }
 
-        sendTaskResult(context, task, result, webhookUrl, secret) { success ->
+        sendTaskResult(context, task, result, webhookUrl, secret, onSent = { success ->
             if (success) {
                 TaskResultCache.remove(context, task.taskId)
             } else {
                 TaskResultCache.incrementRetry(context, task.taskId)
             }
-        }
+            onSent?.invoke(success)
+        }, notifyUi = false)
     }
 
     private fun parseIsoToMillis(iso: String?): Long {
@@ -566,22 +595,7 @@ object TaskScanner {
      * رقم العملية ليس شرطاً في التصفية لأن parseSmsBody يستخرجه لاحقاً.
      * رسائل "تم تحويل" (صادرة) مرفوضة لأنها مش تأكيد دفع وارد.
      */
-    fun isOfficialVodafoneCashMessage(body: String): Boolean {
-        if (MANDATORY_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
-        if (RECEIVED_KEYWORDS.none { body.contains(it, ignoreCase = true) }) return false
-        // نتحقق من OUTGOING_KEYWORDS فقط في أول 20 حرف من الرسالة
-        // لأن كلمات مثل "تم تحويل" تظهر في رسائل الاستلام الرسمية بعد المبلغ
-        val bodyPrefix = body.trimStart().take(20)
-        if (OUTGOING_KEYWORDS.any { bodyPrefix.contains(it, ignoreCase = true) }) return false
-
-        val hasAmount = listOf(
-            Regex("""(?:تم\s+استلام(?:\s+مبلغ)?|استلام(?:\s+مبلغ)?|استلمت(?:\s+مبلغ)?|مبلغ)\s*[\d,]+\.?\d*\s*(?:جنيه|جنية|ج\.م|egp)""", RegexOption.IGNORE_CASE),
-            Regex("""(?:received|rcv|rec\.?)\s+(?:egp|amount)?\s*[\d,]+\.?\d*""", RegexOption.IGNORE_CASE),
-            Regex("""\bEGP\s+[\d,]+\.?\d*""", RegexOption.IGNORE_CASE),
-            Regex("""\b[\d,]+\.?\d*\s*(?:جنيه|جنية|ج\.م|egp)\b""", RegexOption.IGNORE_CASE)
-        ).any { it.find(body) != null }
-        return hasAmount
-    }
+    fun isOfficialVodafoneCashMessage(body: String): Boolean = SmsParser.isOfficialReceivedMessage(body)
 
     /**
      * فحص صندوق الرسائل الحقيقي للاختبار — بيرجع كل رسائل فودافون كاش الرسمية.
@@ -600,8 +614,8 @@ object TaskScanner {
         cursor.use { c ->
             while (c.moveToNext()) {
                 val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
-                if (isOfficialVodafoneCashMessage(body)) {
-                    val parsed = parseSmsBody(body)
+                if (SmsParser.isOfficialReceivedMessage(body)) {
+                    val parsed = SmsParser.parseReceived(body)
                     val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
                     results.add(parsed.copy(date = date))
                 }
@@ -616,10 +630,10 @@ object TaskScanner {
      */
     fun searchInboxForTest(context: Context, target: ParsedSms): List<ParsedSms> {
         val all = scanInboxForTest(context)
-        val targetPhone = normalizeEgyptianPhone(target.senderPhone ?: "")
+        val targetPhone = SmsParser.normalizeEgyptianPhone(target.senderPhone ?: "")
         val targetAmount = target.amount ?: 0.0
         return all.filter { sms ->
-            val smsPhone = normalizeEgyptianPhone(sms.senderPhone ?: "")
+            val smsPhone = SmsParser.normalizeEgyptianPhone(sms.senderPhone ?: "")
             val amountMatch = targetAmount > 0 && sms.amount != null && kotlin.math.abs(sms.amount - targetAmount) <= 0.01
             val phoneMatch = targetPhone.isNotEmpty() && smsPhone == targetPhone
             amountMatch && phoneMatch
@@ -640,115 +654,7 @@ object TaskScanner {
                 parsed.transactionId != null
     }
 
-    private fun parseSmsBody(text: String): ParsedSms {
-        // ── الأولوية: رسالة فودافون كاش المصرية الرسمية ──────────────────────
-        // "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ 15:54 26-08-13. رقم العملية: 022655099780"
-        // "تم استلام مبلغ 5.10 جنيه من 01222692182؛ المسجل بإسم نادر اكرام راغب مينا على رقم محفظتك 01097273680 ..."
-        // ── officialVFRegex v2: يدعم كلا التنسيقين ─────────────────────────
-        // تنسيق 1 (متعدد الأسطر الجديد):
-        //   "تم استلام مبلغ 5.40 جنيه من رقم 01222692182 المسجل بإسم نادر اكرام راغب مينا على رقم محفظتك 01097273680.\nرصيدك الحالي:...\nرقم العملية: 022768543034"
-        // تنسيق 2 (السطر الواحد القديم):
-        //   "تم استلام مبلغ 300.00 جنيه من 01152210028؛ المسجل بإسم AHMED REDA على رقم محفظتك 01097273680 بتاريخ ... رقم العملية: 022655099780"
-        // الفرق الرئيسي: الفاصل بعد الرقم قد يكون مسافة أو ؛ أو . أو ,
-        val officialVFRegex = Regex(
-            """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})""" +
-            """(?:\s*[؛;.,]\s*|\s+)""" +                    // فاصل مرن: ؛ أو ; أو . أو , أو مسافة
-            """المسجل\s+بإسم\s+""" +
-            """([\u0600-\u06FFA-Za-z][\u0600-\u06FFA-Za-z0-9 ]{1,60}?)""" +  // اسم عربي أو إنجليزي
-            """\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})""",
-            setOf(RegexOption.DOT_MATCHES_ALL)
-        )
-        // رقم العملية يُستخرج بشكل منفصل (قد يكون في سطر مختلف)
-        val txRegexOfficial = Regex("""رقم\s+العملية[:\s]+([0-9]{9,20})""")
-
-        val om = officialVFRegex.find(text)
-        if (om != null) {
-            val txMatch = txRegexOfficial.find(text)
-            return ParsedSms(
-                senderPhone    = om.groupValues[2].trim(),
-                senderName     = om.groupValues[3].trim(),
-                amount         = om.groupValues[1].replace(",", "").toDoubleOrNull(),
-                transactionId  = txMatch?.groupValues?.get(1)?.trim(),
-                body           = text,
-                date           = System.currentTimeMillis(),
-                receiverWallet = om.groupValues[4].trim()
-            )
-        }
-
-        // ── fallback: باقي أنماط فودافون كاش ────────────────────────────────
-        val amountRegexes = listOf(
-            Regex("تم استلام مبلغ\\s*([\\d,]+\\.?\\d{0,2})\\s*جنيه"),
-            Regex("مبلغ\\s*([\\d,]+\\.?\\d{0,2})\\s*جنيه"),
-            Regex("استلمت\\s+(?:من\\s+.+?\\s+)?مبلغ\\s*([\\d,]+\\.?\\d{0,2})"),
-            Regex("received\\s+(?:egp\\s+)?([\\d,]+\\.?\\d{0,2})", RegexOption.IGNORE_CASE),
-            Regex("egp\\s+([\\d,]+\\.?\\d{0,2})", RegexOption.IGNORE_CASE),
-            Regex("([\\d,]+\\.\\d{1,2})\\s*جنيه"),
-            Regex("([\\d,]+\\.?\\d{0,2})")
-        )
-        var amount: Double? = null
-        for (re in amountRegexes) {
-            val m = re.find(text)
-            if (m != null) {
-                val v = m.groupValues[1].replace(",", "").toDoubleOrNull()
-                if (v != null && v > 0) { amount = v; break }
-            }
-        }
-
-        // Phone — from SMS sender line e.g. "من 01152210028"
-        val phoneRegexes = listOf(
-            Regex("من\\s*(\\+?0?1[0-9]{9})"),
-            Regex("from\\s*(\\+?\\d[\\d ]{8,14})", RegexOption.IGNORE_CASE),
-            Regex("(\\+?20\\s*1\\d{9})"),
-            Regex("(01[0-9]{9})")
-        )
-        var senderPhone: String? = null
-        for (re in phoneRegexes) {
-            val m = re.find(text)
-            if (m != null) { senderPhone = m.groupValues[1].replace("\\s".toRegex(), ""); break }
-        }
-
-        // Sender name — "بإسم AHMED REDA على" / "بإسم نادر اكرام على" / "المسجل بإسم"
-        val nameRegexes = listOf(
-            Regex("(?:المسجل\\s+)?بإسم\\s+([A-Za-z][A-Za-z0-9 ]{1,40})\\s*على"),
-            Regex("(?:المسجل\\s+)?بإسم\\s+([\\u0600-\\u06FF ]{2,40})\\s*على"),
-            Regex("(?:المسجل\\s+)?باسم\\s+([\\u0600-\\u06FF ]{2,40})\\s+"),
-            Regex("from\\s+([A-Za-z][A-Za-z ]{1,30})\\s+on", RegexOption.IGNORE_CASE)
-        )
-        var senderName: String? = null
-        for (re in nameRegexes) {
-            val m = re.find(text)
-            if (m != null) {
-                val candidate = m.groupValues[1].trim()
-                if (!candidate.matches(Regex("\\d+"))) { senderName = candidate; break }
-            }
-        }
-
-        // Receiver wallet — "على رقم محفظتك 01097273680"
-        val walletRegexes = listOf(
-            Regex("على رقم محفظتك\\s*(0?1[0-9]{9})"),
-            Regex("wallet[:\\s]*(\\+?0?1[0-9]{9})", RegexOption.IGNORE_CASE)
-        )
-        var receiverWallet: String? = null
-        for (re in walletRegexes) {
-            val m = re.find(text)
-            if (m != null) { receiverWallet = m.groupValues[1]; break }
-        }
-
-        // Transaction ID — "رقم العملية: 022655099780"
-        val txRegexes = listOf(
-            Regex("رقم العملية[:\\s]+([A-Za-z0-9]+)"),
-            Regex("كود المعاملة[:\\s]+([A-Za-z0-9]+)"),
-            Regex("transaction\\s*id[:\\s]+([A-Za-z0-9]+)", RegexOption.IGNORE_CASE),
-            Regex("\\b([0-9]{9,20})\\b")
-        )
-        var transactionId: String? = null
-        for (re in txRegexes) {
-            val m = re.find(text)
-            if (m != null) { transactionId = m.groupValues[1]; break }
-        }
-
-        return ParsedSms(senderPhone, senderName, amount, transactionId, text, 0, receiverWallet)
-    }
+    private fun parseSmsBody(text: String): ParsedSms = SmsParser.parseReceived(text)
 
     private fun normalizeEgyptianPhone(raw: String): String {
         val digits = raw.replace("\\D".toRegex(), "")

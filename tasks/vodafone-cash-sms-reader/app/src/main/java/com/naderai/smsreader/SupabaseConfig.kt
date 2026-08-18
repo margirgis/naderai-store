@@ -25,6 +25,9 @@ object SupabaseConfig {
     /** رابط إرسال نتيجة فحص SMS من الأدمن دون الحاجة لـ Webhook Secret */
     fun getAdminTaskResultUrl(supabaseUrl: String?): String? = buildUrl(supabaseUrl, ADMIN_TASK_RESULT_PATH)
 
+    /** رابط جلب كل الطلبات للأدمن (alias) */
+    fun getAdminUrl(supabaseUrl: String?): String? = getAdminOrdersUrl(supabaseUrl)
+
     private fun buildUrl(supabaseUrl: String?, path: String): String? {
         val base = supabaseUrl?.trim() ?: return null
         if (base.isEmpty()) return null

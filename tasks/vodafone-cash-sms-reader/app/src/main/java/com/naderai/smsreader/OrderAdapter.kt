@@ -1,5 +1,6 @@
 package com.naderai.smsreader
 
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
@@ -26,64 +27,87 @@ class OrderAdapter(
 
     inner class VH(private val binding: ItemOrderBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(order: OrderItem) {
+            val snap = order.resolvedSnapshot()
+
             // رقم الطلب
-            val label = if (order.orderNumber != null) "طلب #${order.orderNumber}" else "طلب #${order.requestId.take(8)}…"
+            val label = if (snap.orderNumber != null) "طلب شحن #${snap.orderNumber}" else "طلب #${order.requestId.take(8)}"
             binding.orderIdText.text = label
 
             // المبلغ
-            binding.orderAmountText.text = "%.2f جنيه".format(order.expectedAmount)
+            binding.orderAmountText.text = "%.2f".format(snap.expectedAmount)
+            binding.orderCurrencyText.text = "جنيه"
 
             // الكريدت
-            if (order.creditsRequested != null && order.creditsRequested > 0) {
+            if (snap.creditsRequested != null && snap.creditsRequested > 0) {
                 binding.orderCreditsText.visibility = View.VISIBLE
-                binding.orderCreditsText.text = "🎯 ${order.creditsRequested} كريدت"
+                binding.orderCreditsText.text = "${snap.creditsRequested} Credit"
             } else {
                 binding.orderCreditsText.visibility = View.GONE
             }
 
             // حالة الطلب
-            binding.orderStatusBadge.text = order.status.label
-            try { binding.orderStatusBadge.setBackgroundColor(Color.parseColor(order.status.color)) }
-            catch (_: Exception) {}
+            binding.orderStatusBadge.text = "${statusIcon(order.status)} ${order.status.label}"
+            try {
+                val color = Color.parseColor(order.status.color)
+                binding.orderStatusBadge.backgroundTintList = ColorStateList.valueOf(color)
+            } catch (_: Exception) {}
 
-            // senderPhoneRequested هو رقم المحفظة التي أرسلت التحويل.
-            // customerPhone هو رقم حساب العميل وليس رقم المحوّل.
-            val senderDisplay = order.senderPhoneRequested?.takeIf { it.isNotEmpty() }
-                ?: "رقم المُحوِّل غير متوفر"
-            binding.orderCustomerPhone.text = senderDisplay
+            // العميل (اسم صاحب الحساب من الموقع)
+            binding.orderCustomerName.text = snap.customerName?.takeIf { it.isNotEmpty() } ?: "—"
+            binding.orderCustomerEmail.text = snap.customerEmail?.takeIf { it.isNotEmpty() } ?: "—"
 
-            // اسم صاحب الحساب الحقيقي (من profiles.full_name) — ليس اسم المُحوِّل
-            val nameDisplay = order.customerName?.takeIf { it.isNotEmpty() }
-                ?: order.customerEmail?.takeIf { it.isNotEmpty() }?.substringBefore('@')
+            // رقم المحوّل (senderPhoneRequested) — محفظة العميل التي يجب التحويل منها
+            binding.orderSenderPhone.text = snap.senderPhoneRequested?.takeIf { it.isNotEmpty() } ?: "—"
+            binding.orderSenderName.text = order.senderNameFound?.takeIf { it.isNotEmpty() }
+                ?: snap.senderNameRequested?.takeIf { it.isNotEmpty() }
                 ?: "—"
-            binding.orderCustomerEmail.text = "$nameDisplay • ${order.customerEmail?.takeIf { it.isNotEmpty() } ?: "—"}"
 
             // طريقة الدفع
-            binding.orderPaymentMethod.text = when (order.paymentMethod) {
-                "vodafone_cash" -> "💳 فودافون كاش"
-                "instapay" -> "💳 إنستاباي"
-                else -> order.paymentMethod ?: "—"
+            binding.orderPaymentMethod.text = when (snap.paymentMethod) {
+                "vodafone_cash" -> "فودافون كاش"
+                "instapay" -> "إنستاباي"
+                else -> snap.paymentMethod ?: "—"
             }
 
             // تاريخ الطلب
             binding.orderCreatedAt.text = formatTime(order.createdAt)
 
-            // سبب الفشل — رسالة مستخدم لطيفة بدون تفاصيل تقنية
-            // لا نعرض "تم العثور على 734 رسالة لكن لا توجد مطابقة تامة" أو ما شابهها
+            // مطابقة الرسالة
+            if (order.status == OrderStatus.MATCHED || order.status == OrderStatus.COMPLETED || order.status == OrderStatus.CONFIRMED) {
+                binding.orderMatchStatus.visibility = View.VISIBLE
+                binding.orderMatchStatus.text = "✓ تم العثور على التحويل"
+                binding.orderMatchAmount.text = "%.2f".format(order.amountFound ?: 0.0)
+                binding.orderMatchAmount.visibility = View.VISIBLE
+            } else if (order.status == OrderStatus.SCANNING || order.status == OrderStatus.MATCHING) {
+                binding.orderMatchStatus.visibility = View.VISIBLE
+                binding.orderMatchStatus.text = "🔎 جاري البحث..."
+                binding.orderMatchAmount.visibility = View.GONE
+            } else if (order.status == OrderStatus.AMOUNT_MISMATCH) {
+                binding.orderMatchStatus.visibility = View.VISIBLE
+                binding.orderMatchStatus.text = "⚠ المبلغ المُحوَّل لا يطابق"
+                binding.orderMatchAmount.text = "%.2f".format(order.amountFound ?: 0.0)
+                binding.orderMatchAmount.visibility = View.VISIBLE
+            } else {
+                binding.orderMatchStatus.visibility = View.GONE
+                binding.orderMatchAmount.visibility = View.GONE
+            }
+
+            // سبب الفشل
             val userFriendlyReason: String? = when (order.status) {
-                OrderStatus.NOT_FOUND      -> "لم يتم العثور على معاملة مطابقة"
-                OrderStatus.AMOUNT_MISMATCH-> "المبلغ المُحوَّل لا يطابق المطلوب"
-                OrderStatus.FAILED         -> "فشل الفحص — تواصل مع الدعم"
-                else -> null  // لا نعرض شيئاً للحالات الأخرى
+                OrderStatus.NOT_FOUND -> "لم يتم العثور على معاملة مطابقة"
+                OrderStatus.AMOUNT_MISMATCH -> "المبلغ المُحوَّل لا يطابق المطلوب"
+                OrderStatus.FAILED -> order.failureReason ?: "فشل الفحص — تواصل مع الدعم"
+                OrderStatus.EXPIRED -> "انتهت صلاحية الطلب"
+                else -> null
             }
             if (userFriendlyReason != null) {
                 binding.orderFailureReason.visibility = View.VISIBLE
-                binding.orderFailureReason.text = "⚠️ $userFriendlyReason"
+                binding.orderFailureReason.text = userFriendlyReason
             } else {
                 binding.orderFailureReason.visibility = View.GONE
             }
 
-            // رقم العملية — يُخفى لو null أو "null"
+            // رقم العملية
             val txText = order.transactionId?.takeIf { it.isNotEmpty() && it != "null" }
             if (txText != null) {
                 binding.orderTxId.visibility = View.VISIBLE
@@ -92,15 +116,15 @@ class OrderAdapter(
                 binding.orderTxId.visibility = View.GONE
             }
 
-            // حالة الفحص + عداد المحاولات (يظهر للطلبات المعلقة وجاري فحصها)
-            if (order.status in setOf(OrderStatus.SCANNING, OrderStatus.PENDING, OrderStatus.MANUAL_REVIEW)) {
+            // حالة الفحص + عداد المحاولات
+            if (order.status in setOf(OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.PENDING, OrderStatus.MANUAL_REVIEW)) {
                 binding.orderScanProgress.visibility = View.VISIBLE
                 val remaining = order.maxAttempts - order.scanAttempt
                 val attemptText = when {
-                    order.status == OrderStatus.MANUAL_REVIEW -> "⚠️ يحتاج مراجعة يدوية"
+                    order.status == OrderStatus.MANUAL_REVIEW -> "⚠ يحتاج مراجعة يدوية"
                     order.status == OrderStatus.EXPIRED -> "انتهت صلاحية الطلب"
-                    order.scanAttempt > 0 -> "🔍 المحاولة ${order.scanAttempt}/${order.maxAttempts} (متبقي $remaining)"
-                    else -> "⏳ في انتظار بدء الفحص…"
+                    order.scanAttempt > 0 -> "محاولة الفحص: ${order.scanAttempt}/${order.maxAttempts} (متبقي $remaining)"
+                    else -> "في انتظار بدء الفحص…"
                 }
                 val countdownText = if (order.nextScanCountdown > 0 && order.status == OrderStatus.SCANNING)
                     " • التالية بعد ${order.nextScanCountdown}ث"
@@ -110,21 +134,39 @@ class OrderAdapter(
                 binding.orderScanProgress.visibility = View.GONE
             }
 
-            // أزرار الإجراءات: يبدأ الفحص للطلبات المعلقة، وتأكيد/إعادة للحالات النهائية
-            // الطلبات المنتهية الصلاحية لا تسمح بتأكيد يدوي
-            val showActions = order.status in listOf(
-                OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MANUAL_REVIEW,
+            // أزرار الإجراءات
+            val showActions = order.status in setOf(
+                OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.MANUAL_REVIEW,
                 OrderStatus.AMOUNT_MISMATCH, OrderStatus.NOT_FOUND, OrderStatus.FAILED
             )
             binding.actionDivider.visibility = if (showActions) View.VISIBLE else View.GONE
             binding.actionButtons.visibility = if (showActions) View.VISIBLE else View.GONE
 
             binding.btnStartScan.visibility = if (order.status == OrderStatus.PENDING) View.VISIBLE else View.GONE
-            binding.btnRescan.visibility = if (order.status != OrderStatus.PENDING) View.VISIBLE else View.GONE
+            binding.btnRescan.visibility = if (order.status != OrderStatus.PENDING && !order.status.isTerminal()) View.VISIBLE else View.GONE
+            binding.btnConfirmManual.visibility = if (!order.status.isTerminal()) View.VISIBLE else View.GONE
 
             binding.btnStartScan.setOnClickListener { onStartScan?.invoke(order) }
             binding.btnConfirmManual.setOnClickListener { onConfirmManual?.invoke(order) }
             binding.btnRescan.setOnClickListener { onRescan?.invoke(order) }
+        }
+
+        private fun statusIcon(status: OrderStatus): String = when (status) {
+            OrderStatus.NEW -> "🟣"
+            OrderStatus.RECEIVED -> "📥"
+            OrderStatus.PENDING -> "⏳"
+            OrderStatus.SCANNING -> "🔍"
+            OrderStatus.MATCHING -> "🔎"
+            OrderStatus.MATCHED -> "🎯"
+            OrderStatus.WAITING_CONFIRMATION -> "⏳"
+            OrderStatus.CONFIRMED -> "✅"
+            OrderStatus.COMPLETED -> "✅"
+            OrderStatus.AMOUNT_MISMATCH -> "⚠"
+            OrderStatus.MANUAL_REVIEW -> "👁"
+            OrderStatus.NOT_FOUND -> "❌"
+            OrderStatus.FAILED -> "🚫"
+            OrderStatus.DUPLICATE -> "🔁"
+            OrderStatus.EXPIRED -> "⌛"
         }
     }
 

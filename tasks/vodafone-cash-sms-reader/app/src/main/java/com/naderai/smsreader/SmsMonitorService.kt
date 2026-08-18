@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 class SmsMonitorService : Service() {
 
     private var heartbeatManager: HeartbeatManager? = null
+    private var orderSyncManager: OrderSyncManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
@@ -77,16 +78,14 @@ class SmsMonitorService : Service() {
                 // تحقق من الحالة النهائية في AppState قبل أي فحص
                 val existingStatus = AppState.getOrders()
                     .firstOrNull { it.requestId == task.requestId }?.status
-                if (existingStatus == OrderStatus.CONFIRMED) {
+                if (existingStatus?.isTerminal() == true) {
                     android.util.Log.d("SmsMonitorService",
-                        "onNewSms: skipping confirmed order ${task.requestId}")
+                        "onNewSms: skipping terminal order ${task.requestId} (${existingStatus.name})")
                     return@forEach
                 }
-                // إذا كان الطلب فاشلاً أو منتهياً، نعيد فتحه قبل الفحص
-                if (existingStatus != null && existingStatus != OrderStatus.PENDING) {
-                    AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
-                    AppState.updateOrderScanProgress(task.requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
-                    TaskResultCache.remove(context, task.taskId)
+                // لا نعيد فتح الطلبات الفاشلة/المنتهية تلقائياً — يدوي فقط
+                if (existingStatus != null && existingStatus != OrderStatus.PENDING && existingStatus != OrderStatus.SCANNING) {
+                    return@forEach
                 }
                 if (TaskResultCache.get(context, task.taskId) != null) return@forEach
                 processTask(context, task, webhookUrl ?: "", secret ?: "")
@@ -140,14 +139,16 @@ class SmsMonitorService : Service() {
 
         private fun applyCachedStatus(requestId: String, cached: TaskResultCache.CachedResult) {
             val status = when (cached.status) {
-                "success" -> OrderStatus.CONFIRMED
+                "success" -> OrderStatus.COMPLETED
                 "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
                 "not_found" -> OrderStatus.NOT_FOUND
                 "failure" -> OrderStatus.FAILED
                 else -> OrderStatus.PENDING
-    }
-    if (status != OrderStatus.PENDING) AppState.updateOrderStatus(requestId, status)
-}
+            }
+            if (status != OrderStatus.PENDING) {
+                AppState.updateOrderStatus(requestId, status)
+            }
+        }
 
         @JvmStatic
         fun forceScanTask(context: Context, task: TaskScanner.Task) {
@@ -159,8 +160,11 @@ class SmsMonitorService : Service() {
                 android.util.Log.w("SmsMonitorService", "forceScanTask: no webhook or admin session")
                 return
             }
+            // السماح بإعادة الفحص اليدوي: نمسح الكاش ونلغي القفل السابق
             TaskResultCache.remove(context, task.taskId)
+            TaskScanner.clearScanLock(task.taskId)
             AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
+            AppState.updateOrderScanProgress(task.requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
             processTask(context, task, webhookUrl ?: "", secret ?: "")
         }
 
@@ -182,15 +186,14 @@ class SmsMonitorService : Service() {
                 // حماية مزدوجة: تحقق من الحالة النهائية في AppState
                 val existingStatus = AppState.getOrders()
                     .firstOrNull { it.requestId == task.requestId }?.status
-                if (existingStatus == OrderStatus.CONFIRMED) {
+                if (existingStatus?.isTerminal() == true) {
                     android.util.Log.d("SmsMonitorService",
-                        "handlePendingTasks: skipping confirmed order ${task.requestId}")
+                        "handlePendingTasks: skipping terminal order ${task.requestId} (${existingStatus.name})")
                     return@forEach
                 }
-                if (existingStatus != null && existingStatus != OrderStatus.PENDING) {
-                    AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
-                    AppState.updateOrderScanProgress(task.requestId, 0, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
-                    TaskResultCache.remove(context, task.taskId)
+                if (existingStatus != null && existingStatus != OrderStatus.PENDING && existingStatus != OrderStatus.SCANNING) {
+                    // لا نعيد فتح الطلبات غير المعلقة تلقائياً
+                    return@forEach
                 }
 
                 // لو task_id مش موجود، الطلب ده مش له مهمة فحص — تجاهله
@@ -204,6 +207,10 @@ class SmsMonitorService : Service() {
                     android.util.Log.d("SmsMonitorService", "Task ${task.taskId} already cached, skipping re-scan")
                     applyCachedStatus(task.requestId, cached)
                     resendCachedResult(context, task, cached, webhookUrl, secret)
+                    return@forEach
+                }
+                if (TaskScanner.isScanning(task.taskId)) {
+                    android.util.Log.d("SmsMonitorService", "Task ${task.taskId} is already scanning")
                     return@forEach
                 }
                 processTask(context, task, webhookUrl, secret)
@@ -264,6 +271,12 @@ class SmsMonitorService : Service() {
 heartbeatManager?.start()
 } else if (AdminSession.isLoggedIn(this)) {
     updateNotification("متصل كأدمن ✓")
+    // مزامنة دورية كل 10 ثوانٍ للأدمن لتحديث الحالات مباشرة
+    orderSyncManager?.stop()
+    orderSyncManager = OrderSyncManager(this, SupabaseConfig.getAdminUrl(webhookUrl ?: "") ?: "") { success, msg ->
+        if (success) updateNotification("تمت المزامنة ✓")
+    }
+    orderSyncManager?.start()
 } else {
     updateNotification("في انتظار الإعدادات...")
 }
@@ -276,6 +289,8 @@ heartbeatManager?.start()
         serviceInstance = null
         heartbeatManager?.stop()
         heartbeatManager = null
+        orderSyncManager?.stop()
+        orderSyncManager = null
         wakeLock?.release()
         wakeLock = null
         super.onDestroy()
