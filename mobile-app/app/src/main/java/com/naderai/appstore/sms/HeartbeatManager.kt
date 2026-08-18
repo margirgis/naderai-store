@@ -1,16 +1,14 @@
 package com.naderai.appstore.sms
 
 import android.content.Context
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.naderai.appstore.BuildConfig
 
 /**
- * يُرسل heartbeat كل 120 ثانية للسيرفر.
- * عند أول تشغيل يُسجَّل الجهاز (device_register).
- * يستقبل قائمة المهام المعلقة ويُمررها لـ callback.
+ * يزامن المهام مع السيرفر بشكل دوري.
+ * عند التشغيل يرسل heartbeat فورًا، ثم كل 120 ثانية.
  */
 class HeartbeatManager(
     private val context: Context,
@@ -22,7 +20,6 @@ class HeartbeatManager(
     private val TAG = "HeartbeatManager"
     private val handler = Handler(Looper.getMainLooper())
     private val deviceId get() = DeviceInfo.getDeviceId(context)
-    private var registered = false
 
     companion object {
         private const val HEARTBEAT_INTERVAL_MS = 120_000L
@@ -37,6 +34,9 @@ class HeartbeatManager(
 
     fun start() {
         registerDevice()
+        // لا ننتظر دقيقتين عند تشغيل التطبيق/الخدمة.
+        sendHeartbeat()
+        handler.removeCallbacks(heartbeatRunnable)
         handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
         Log.d(TAG, "HeartbeatManager started — interval=${HEARTBEAT_INTERVAL_MS}ms")
     }
@@ -63,7 +63,6 @@ class HeartbeatManager(
             )
         )
         WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { ok, msg, body ->
-            registered = ok
             if (ok) {
                 Log.d(TAG, "Device registered OK: $body")
                 onStatusChange(true, "مسجل ✓")
@@ -85,17 +84,20 @@ class HeartbeatManager(
         }
         WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { ok, msg, body ->
             onStatusChange(ok, if (ok) "متصل" else "انقطع الاتصال: $msg")
-            if (ok) {
-                parsePendingTasks(body)
-            }
+            if (ok) parsePendingTasks(body)
         }
     }
 
-    /** يستخرج قائمة المهام المعلقة من رد السيرفر */
+    /** يستخرج قائمة المهام المعلقة من رد السيرفر، بما فيها القائمة الفارغة. */
     private fun parsePendingTasks(responseBody: String) {
         try {
             val json = org.json.JSONObject(responseBody)
-            val arr = json.optJSONArray("tasks") ?: return
+            val arr = json.optJSONArray("tasks")
+            if (arr == null) {
+                Log.w(TAG, "Heartbeat response has no tasks array")
+                return
+            }
+
             val tasks = mutableListOf<TaskScanner.Task>()
             for (i in 0 until arr.length()) {
                 val t = arr.getJSONObject(i)
@@ -104,15 +106,21 @@ class HeartbeatManager(
                         taskId = t.optString("id"),
                         requestId = t.optString("request_id"),
                         amountRequested = t.optDouble("amount_requested", 0.0),
-                        senderPhoneRequested = t.optString("sender_phone_requested").takeIf { it.isNotEmpty() },
-                        fingerprintAmount = t.optDouble("fingerprint_amount", Double.NaN).takeUnless { it.isNaN() }
+                        senderPhoneRequested = t.optString("sender_phone_requested")
+                            .takeIf { it.isNotEmpty() },
+                        fingerprintAmount = t.optDouble("fingerprint_amount", Double.NaN)
+                            .takeUnless { it.isNaN() },
+                        senderNameRequested = t.optString("sender_name_requested")
+                            .takeIf { it.isNotEmpty() },
+                        receiverWalletRequested = t.optString("receiver_wallet_requested")
+                            .takeIf { it.isNotEmpty() }
                     )
                 )
             }
-            if (tasks.isNotEmpty()) {
-                Log.d(TAG, "Received ${tasks.size} pending tasks")
-                onPendingTasks(tasks)
-            }
+
+            Log.d(TAG, "Received ${tasks.size} pending tasks")
+            // مهم: حتى لو القائمة فارغة، نرسل callback حتى لا تظل مهام قديمة في الذاكرة.
+            onPendingTasks(tasks)
         } catch (e: Exception) {
             Log.e(TAG, "parsePendingTasks error: ${e.message}")
         }
