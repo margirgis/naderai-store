@@ -27,6 +27,7 @@ class SmsReaderService : Service() {
     private var webhookUrl: String? = null
     private var webhookSecret: String? = null
     private val pendingTasks = mutableListOf<TaskScanner.Task>()
+    private val inFlightTaskIds = mutableSetOf<String>()
 
     companion object {
         private const val CHANNEL_ID = "naderai_sms_channel"
@@ -101,8 +102,12 @@ class SmsReaderService : Service() {
                 updateNotification(if (connected) "متصل ✓ — $msg" else "⚠️ $msg")
             },
             onPendingTasks = { tasks ->
-                pendingTasks.clear()
-                pendingTasks.addAll(tasks)
+                synchronized(pendingTasks) {
+                    pendingTasks.clear()
+                    pendingTasks.addAll(tasks)
+                    // مهمة اختفت من السيرفر لا يجب أن تبقى قيد الإرسال محليًا.
+                    inFlightTaskIds.retainAll(tasks.map { it.taskId }.toSet())
+                }
                 processPendingTasksFromInbox()
             }
         )
@@ -113,8 +118,10 @@ class SmsReaderService : Service() {
         Log.d(TAG, "Incoming SMS from $sender, body=${body.take(80)}")
         if (!TaskScanner.isOfficialVodafoneCashMessage(body)) return
 
-        val matched = pendingTasks.firstOrNull { task ->
-            TaskScanner.matchSmsToTask(body, task)
+        val matched = synchronized(pendingTasks) {
+            pendingTasks.firstOrNull { task ->
+                !inFlightTaskIds.contains(task.taskId) && TaskScanner.matchSmsToTask(body, task)
+            }
         }
 
         if (matched != null) {
@@ -128,8 +135,11 @@ class SmsReaderService : Service() {
     }
 
     private fun processPendingTasksFromInbox() {
-        if (pendingTasks.isEmpty()) return
-        Log.d(TAG, "Processing ${pendingTasks.size} pending tasks from inbox")
+        val tasks = synchronized(pendingTasks) {
+            pendingTasks.filterNot { inFlightTaskIds.contains(it.taskId) }.toList()
+        }
+        if (tasks.isEmpty()) return
+        Log.d(TAG, "Processing ${tasks.size} pending tasks from inbox")
 
         try {
             val cursor: Cursor? = contentResolver.query(
@@ -149,8 +159,7 @@ class SmsReaderService : Service() {
                 }
             }
 
-            // لا نحذف المهمة هنا. sendTaskResult هي التي تحذفها بعد نجاح HTTP.
-            for (task in pendingTasks.toList()) {
+            for (task in tasks) {
                 val sms = smsList.firstOrNull { (_, body) ->
                     TaskScanner.matchSmsToTask(body, task)
                 } ?: continue
@@ -170,12 +179,23 @@ class SmsReaderService : Service() {
     ) {
         val url = webhookUrl ?: return
         val secret = webhookSecret ?: return
+
+        synchronized(pendingTasks) {
+            if (!inFlightTaskIds.add(task.taskId)) {
+                Log.d(TAG, "Task ${task.taskId} already has a result in flight")
+                return
+            }
+        }
+
         val payload = TaskScanner.buildResultPayload(task.taskId, smsBody, success, reason)
         WebhookSender.sendJson(url, secret, payload) { ok, msg ->
-            if (ok) {
-                synchronized(pendingTasks) {
+            synchronized(pendingTasks) {
+                inFlightTaskIds.remove(task.taskId)
+                if (ok) {
                     pendingTasks.removeAll { it.taskId == task.taskId }
                 }
+            }
+            if (ok) {
                 Log.d(TAG, "Task result accepted by server; removed task ${task.taskId}")
             } else {
                 Log.w(TAG, "Task result failed; keeping task ${task.taskId} for retry: $msg")
@@ -223,6 +243,7 @@ class SmsReaderService : Service() {
 
     override fun onDestroy() {
         heartbeatManager?.stop()
+        synchronized(pendingTasks) { inFlightTaskIds.clear() }
         Log.d(TAG, "Service destroyed")
         super.onDestroy()
     }
