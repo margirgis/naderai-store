@@ -82,8 +82,11 @@ Deno.serve(async (req: Request) => {
 
   // Also fetch pending tasks for this device so SMS scanning can still work
   const { data: pendingData } = await db.rpc('get_device_pending_tasks', { p_device_id: deviceId });
-  const pendingTasks = Array.isArray(pendingData) ? pendingData : ((pendingData as any)?.tasks ?? []);
-  const commands = Array.isArray(pendingData) ? [] : ((pendingData as any)?.commands ?? []);
+  const pendingObj = Array.isArray(pendingData) ? {} : ((pendingData as any) ?? {});
+  // Migration 00040 changed the RPC key to 'pending_tasks'; support both old and new shapes.
+  const pendingTasks = pendingObj.pending_tasks ?? pendingObj.tasks ?? [];
+  const commands = pendingObj.commands ?? [];
+  console.log(`[admin-orders] device_id=${deviceId} pending_tasks returned=${pendingTasks.length} commands=${commands.length}`);
 
   return jsonResponse({
     ok: true,

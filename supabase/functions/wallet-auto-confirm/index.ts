@@ -278,9 +278,15 @@ Deno.serve(async (req: Request) => {
       p_device_id: payload.device_id,
     });
 
-    // result is {tasks: [...], commands: [...]}
-    const tasks = (result as any)?.tasks ?? [];
-    const commands = (result as any)?.commands ?? [];
+    // Diagnostics: log the raw response shape without sensitive data
+    const resultKeys = result ? Object.keys(result as any).join(',') : '<null>';
+    console.log(`[heartbeat] device_id=${payload.device_id} get_device_pending_tasks keys=[${resultKeys}]`);
+
+    // Migration 00040 changed the RPC key to 'pending_tasks'; support both old and new shapes.
+    const resultObj = (result as any) ?? {};
+    const tasks = resultObj.pending_tasks ?? resultObj.tasks ?? [];
+    const commands = resultObj.commands ?? [];
+    console.log(`[heartbeat] tasks returned=${tasks.length} commands=${commands.length} device_id=${payload.device_id}`);
 
     // Notify admin when new tasks are dispatched to device on this heartbeat
     if (newlyDispatched > 0) {

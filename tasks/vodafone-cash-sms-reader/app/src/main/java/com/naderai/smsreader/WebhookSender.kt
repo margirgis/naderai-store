@@ -63,12 +63,14 @@ object WebhookSender {
 
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
+                    android.util.Log.e("WebhookSender", "POST $url FAILED: ${e.message}")
                     onResult(false, "فشل الإرسال: ${e.message}", "")
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     val responseBody = response.body?.string() ?: ""
                     val success = response.isSuccessful && responseBody.contains("\"ok\":true")
+                    android.util.Log.d("WebhookSender", "POST $url HTTP ${response.code} ok=$success length=${responseBody.length}")
                     onResult(success, if (success) "تم إرسال التأكيد بنجاح" else "استجابة الخادم: ${response.code}", responseBody)
                 }
             })
