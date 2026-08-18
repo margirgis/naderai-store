@@ -81,6 +81,8 @@ object TaskScanner {
         val orderExpiresAt: String?
     )
 
+    typealias ParsedSms = SmsParser.ParsedSms
+
     /**
      * يفحص صندوق الرسائل كل 20 ثانية — حد أقصى 3 مرات (دقيقة واحدة).
      * لو لقى تطابق يبعت النتيجة فوراً. لو انتهت المحاولات يبعت آخر نتيجة.
