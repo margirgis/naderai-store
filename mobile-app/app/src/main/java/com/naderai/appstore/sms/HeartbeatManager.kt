@@ -8,8 +8,7 @@ import com.naderai.appstore.BuildConfig
 
 /**
  * يزامن المهام مع السيرفر بشكل دوري.
- * عند التشغيل يرسل heartbeat فورًا، ثم كل 15 ثانية كحل مؤقت
- * إلى أن يتم نقل توزيع المهام إلى Realtime/Push حقيقي.
+ * يرسل heartbeat فورًا عند التشغيل ثم كل 15 ثانية مؤقتًا.
  */
 class HeartbeatManager(
     private val context: Context,
@@ -41,7 +40,6 @@ class HeartbeatManager(
         Log.d(TAG, "HeartbeatManager started — interval=${HEARTBEAT_INTERVAL_MS}ms")
     }
 
-    /** تنفيذ مزامنة فورية بدون انتظار الـ interval. */
     fun refreshNow() {
         handler.post { sendHeartbeat() }
     }
@@ -93,7 +91,6 @@ class HeartbeatManager(
         }
     }
 
-    /** يستخرج قائمة المهام المعلقة من رد السيرفر، بما فيها القائمة الفارغة. */
     private fun parsePendingTasks(responseBody: String) {
         try {
             val json = org.json.JSONObject(responseBody)
@@ -118,6 +115,8 @@ class HeartbeatManager(
                         senderNameRequested = t.optString("sender_name_requested")
                             .takeIf { it.isNotEmpty() },
                         receiverWalletRequested = t.optString("receiver_wallet_requested")
+                            .takeIf { it.isNotEmpty() },
+                        transactionIdExpected = t.optString("transaction_id_expected")
                             .takeIf { it.isNotEmpty() }
                     )
                 )
