@@ -174,14 +174,4 @@ object SmsParser {
             else -> digits
         }
     }
-
-    data class ParsedSms(
-        val senderPhone: String?,
-        val senderName: String?,
-        val amount: Double?,
-        val transactionId: String?,
-        val body: String,
-        val date: Long,
-        val receiverWallet: String? = null
-    )
 }
