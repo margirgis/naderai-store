@@ -75,9 +75,10 @@ function resolveStatus(order_status: string, ver_status?: string, scan_status?: 
 interface DashboardStats {
   scanning: number; confirmed: number; failed: number; expired: number;
   admin_offline_count: number; reopened: number; total: number;
+  rejected: number; duplicate: number;
   device_online: boolean; last_heartbeat_at: string | null; pending_queue: number;
 }
-type FilterStatus = 'all'|'review'|'pending'|'scanning'|'approved'|'confirmed'|'rejected'|'failed'|'expired'|'reopened';
+type FilterStatus = 'all'|'review'|'pending'|'scanning'|'approved'|'confirmed'|'rejected'|'duplicate'|'failed'|'expired'|'reopened';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Open-case dialog
@@ -179,9 +180,12 @@ export default function AdminTopupRequestsPage() {
       .limit(200); // show full history
 
     // 'review' = active/in-progress — INCLUDES approved so confirmed orders don't vanish
+    // also includes rejected/duplicate so admin can review fraud attempts
     // 'all' = everything; others = exact match
     if (filter === 'review') {
-      q = q.in('status', ['pending','scanning','waiting_for_verification','admin_offline','approved','confirmed']);
+      q = q.in('status', ['pending','scanning','waiting_for_verification','admin_offline','approved','confirmed','rejected','reopened']);
+    } else if (filter === 'duplicate') {
+      q = q.eq('scan_status', 'duplicate');
     } else if (filter === 'approved' || filter === 'confirmed') {
       q = q.in('status', ['approved','confirmed']);
     } else if (filter !== 'all') {
@@ -430,10 +434,10 @@ export default function AdminTopupRequestsPage() {
           {[
             { label:'قيد الفحص',     v: stats?.scanning          ?? '…', cls:'text-blue-500' },
             { label:'تم التأكيد',    v: stats?.confirmed         ?? '…', cls:'text-green-500' },
-            { label:'فشل',           v: stats?.failed            ?? '…', cls:'text-red-500' },
+            { label:'مرفوض',         v: stats?.rejected          ?? '…', cls:'text-red-500' },
+            { label:'مكرر',          v: stats?.duplicate         ?? '…', cls:'text-purple-500' },
+            { label:'فشل',           v: stats?.failed            ?? '…', cls:'text-red-400' },
             { label:'منتهي',         v: stats?.expired           ?? '…', cls:'text-slate-400' },
-            { label:'ينتظر الاتصال', v: stats?.admin_offline_count ?? '…', cls:'text-orange-500' },
-            { label:'أُعيد فتحه',    v: stats?.reopened          ?? '…', cls:'text-violet-500' },
             { label:'الكل (48h)',    v: stats?.total             ?? '…', cls:'text-foreground' },
           ].map(({ label, v, cls }) => (
             <Card key={label} className="p-2 text-center">
@@ -459,6 +463,7 @@ export default function AdminTopupRequestsPage() {
               <SelectItem value="confirmed">مؤكد</SelectItem>
               <SelectItem value="failed">فشل</SelectItem>
               <SelectItem value="rejected">مرفوض</SelectItem>
+              <SelectItem value="duplicate">عملية مكررة</SelectItem>
               <SelectItem value="expired">منتهي الصلاحية</SelectItem>
               <SelectItem value="reopened">أُعيد فتحه</SelectItem>
             </SelectContent>
