@@ -62,8 +62,11 @@
         </LinearLayout>
 
         <!-- ══ Divider ══ -->
-        <View android:layout_width="match_parent" android:layout_height="1dp"
-            android:background="#18FFFFFF" android:layout_marginBottom="12dp" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#18FFFFFF"
+            android:layout_marginBottom="12dp" />
 
         <!-- ══ Amount + Credits ══ -->
         <LinearLayout
@@ -72,20 +75,18 @@
             android:orientation="horizontal"
             android:layout_marginBottom="12dp">
 
-            <!-- Amount block -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:background="@drawable/info_block_bg"
                 android:padding="10dp"
                 android:layout_marginEnd="6dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="💰 المبلغ المطلوب"
+                    android:text="المبلغ المطلوب"
                     android:textSize="11sp"
                     android:alpha="0.65"
                     android:layout_marginBottom="3dp" />
@@ -115,20 +116,18 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Credits block -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:background="@drawable/info_block_bg"
                 android:padding="10dp"
                 android:layout_marginStart="6dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="💳 الكريدت"
+                    android:text="الكريدت"
                     android:textSize="11sp"
                     android:alpha="0.65"
                     android:layout_marginBottom="3dp" />
@@ -154,7 +153,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="👤 العميل"
+                android:text="العميل"
                 android:textSize="11sp"
                 android:alpha="0.55"
                 android:layout_marginBottom="3dp" />
@@ -191,7 +190,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="📱 رقم المحوّل"
+                android:text="رقم المحوّل"
                 android:textSize="11sp"
                 android:alpha="0.55"
                 android:layout_marginBottom="3dp" />
@@ -242,8 +241,11 @@
         </LinearLayout>
 
         <!-- ══ Divider ══ -->
-        <View android:layout_width="match_parent" android:layout_height="1dp"
-            android:background="#18FFFFFF" android:layout_marginBottom="10dp" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#18FFFFFF"
+            android:layout_marginBottom="10dp" />
 
         <!-- ══ Match status + found amount ══ -->
         <LinearLayout
@@ -319,305 +321,6 @@
             android:visibility="gone" />
 
         <!-- ══ Action buttons ══ -->
-        <LinearLayout
-            android:id="@+id/actionButtons"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:gravity="end">
-
-            <Button
-                android:id="@+id/btnStartScan"
-                style="@style/Widget.Material3.Button"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="ابدأ الفحص"
-                android:textSize="12sp"
-                android:layout_marginEnd="8dp"
-                android:visibility="gone" />
-
-            <Button
-                android:id="@+id/btnRescan"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="إعادة فحص"
-                android:textSize="12sp"
-                android:layout_marginEnd="8dp" />
-
-            <Button
-                android:id="@+id/btnConfirmManual"
-                style="@style/Widget.Material3.Button"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="تأكيد يدوي"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-    </LinearLayout>
-</androidx.cardview.widget.CardView>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
-
-        <!-- Header: order number + status badge -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="10dp"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/orderIdText"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="طلب شحن #—"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/orderStatusBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp"
-                android:text="قيد الانتظار"
-                android:textColor="@android:color/white"
-                android:textSize="12sp"
-                android:background="@drawable/badge_background"
-                android:backgroundTint="@android:color/black" />
-        </LinearLayout>
-
-        <!-- Amount -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="4dp"
-            android:baselineAligned="true"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="💰 المبلغ المطلوب"
-                android:textSize="13sp"
-                android:alpha="0.7"
-                android:layout_marginEnd="8dp" />
-
-            <TextView
-                android:id="@+id/orderAmountText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0.00"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/orderCurrencyText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="جنيه"
-                android:textSize="14sp"
-                android:layout_marginStart="4dp" />
-        </LinearLayout>
-
-        <!-- Credits -->
-        <TextView
-            android:id="@+id/orderCreditsText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="1 Credit"
-            android:textSize="13sp"
-            android:alpha="0.8"
-            android:layout_marginBottom="10dp"
-            android:visibility="gone" />
-
-        <!-- Divider -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#22FFFFFF"
-            android:layout_marginVertical="10dp" />
-
-        <!-- Customer + sender grid -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="8dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="👤 العميل"
-                android:textSize="12sp"
-                android:alpha="0.6" />
-
-            <TextView
-                android:id="@+id/orderCustomerName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="—"
-                android:textSize="15sp"
-                android:layout_marginBottom="2dp" />
-
-            <TextView
-                android:id="@+id/orderCustomerEmail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="—"
-                android:textSize="12sp"
-                android:alpha="0.7" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="8dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📱 رقم المحول"
-                android:textSize="12sp"
-                android:alpha="0.6" />
-
-            <TextView
-                android:id="@+id/orderSenderPhone"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="—"
-                android:textSize="15sp"
-                android:fontFamily="monospace"
-                android:layout_marginBottom="2dp" />
-
-            <TextView
-                android:id="@+id/orderSenderName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="—"
-                android:textSize="12sp"
-                android:alpha="0.7" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="4dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="💳 طريقة الدفع: "
-                android:textSize="12sp"
-                android:alpha="0.6" />
-
-            <TextView
-                android:id="@+id/orderPaymentMethod"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="—"
-                android:textSize="12sp" />
-
-            <TextView
-                android:id="@+id/orderCreatedAt"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="—"
-                android:textSize="12sp"
-                android:alpha="0.6" />
-        </LinearLayout>
-
-        <!-- Match status -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="6dp"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="🔎 حالة المطابقة"
-                android:textSize="12sp"
-                android:alpha="0.6"
-                android:layout_marginEnd="8dp" />
-
-            <TextView
-                android:id="@+id/orderMatchStatus"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="جاري البحث..."
-                android:textSize="13sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/orderMatchAmount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0.00"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Failure reason -->
-        <TextView
-            android:id="@+id/orderFailureReason"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="13sp"
-            android:textColor="#EF4444"
-            android:layout_marginTop="6dp"
-            android:visibility="gone" />
-
-        <!-- Transaction ID -->
-        <TextView
-            android:id="@+id/orderTxId"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="12sp"
-            android:fontFamily="monospace"
-            android:alpha="0.7"
-            android:layout_marginTop="4dp"
-            android:visibility="gone" />
-
-        <!-- Scan progress -->
-        <TextView
-            android:id="@+id/orderScanProgress"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="13sp"
-            android:textColor="#3B82F6"
-            android:layout_marginTop="6dp"
-            android:visibility="gone" />
-
-        <!-- Divider before actions -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#22FFFFFF"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="8dp"
-            android:id="@+id/actionDivider"
-            android:visibility="gone" />
-
-        <!-- Action buttons -->
         <LinearLayout
             android:id="@+id/actionButtons"
             android:layout_width="match_parent"
