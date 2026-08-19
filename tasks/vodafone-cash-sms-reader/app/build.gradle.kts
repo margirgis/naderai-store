@@ -11,8 +11,8 @@ android {
         applicationId = "com.naderai.smsreader"
         minSdk = 24
         targetSdk = 34
-        versionCode = 41
-        versionName = "1.1.33"
+        versionCode = 42
+        versionName = "1.1.36"
 
     }
 
