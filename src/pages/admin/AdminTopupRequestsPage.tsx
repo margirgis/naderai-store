@@ -63,8 +63,10 @@ function resolveStatus(order_status: string, ver_status?: string, scan_status?: 
   if (order_status === 'expired')  return S['expired'];
   if (order_status === 'reopened') return S['reopened'];
   if (order_status === 'failed')   return S['failed'];
-  if (scan_status === 'duplicate') return S['duplicate'];
+  if (scan_status === 'duplicate')       return S['duplicate'];
   if (scan_status === 'amount_mismatch') return S['amount_mismatch'];
+  // scan_status=scanning يغلب على verification_status=waiting_for_verification
+  if (scan_status === 'scanning' || order_status === 'scanning') return S['scanning'];
   if (ver_status && S[ver_status]) return S[ver_status];
   if (scan_status && S[scan_status]) return S[scan_status];
   return S[order_status] ?? { label: order_status, textCls:'text-muted-foreground', bgCls:'', borderCls:'border-border', dot:'#94A3B8' };

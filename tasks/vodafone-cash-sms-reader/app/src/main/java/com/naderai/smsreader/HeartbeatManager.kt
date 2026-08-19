@@ -28,10 +28,10 @@ class HeartbeatManager(
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     companion object {
-        // 10s عند وجود مهام قيد الفحص للحصول على Live Update، 60s في حالة الخمول
+        // 10s عند وجود مهام قيد الفحص، 20s في حالة الخمول (بدل 60s لتسريع استلام الطلبات الجديدة)
         private const val HEARTBEAT_INTERVAL_ACTIVE_MS = 10_000L
-        private const val HEARTBEAT_INTERVAL_IDLE_MS = 60_000L
-        private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        private const val HEARTBEAT_INTERVAL_IDLE_MS = 20_000L
+        private const val HEARTBEAT_INTERVAL_MS = 20_000L
         // Exponential backoff constants
         private const val BACKOFF_BASE_MS  = 2_000L
         private const val BACKOFF_MAX_MS   = 30_000L
@@ -313,12 +313,24 @@ class HeartbeatManager(
 
                 // تحديث أو إضافة الطلب في AppState — addOrUpdateOrder يحمي الحالات النهائية
                 val orderNumber = if (obj.has("order_number") && !obj.isNull("order_number")) obj.getLong("order_number") else null
+                // استخدام request_created_at من السيرفر إذا توفر
+                val requestCreatedAtMs: Long = run {
+                    val raw = obj.optString("request_created_at").takeIf { it.isNotEmpty() }
+                    if (raw != null) {
+                        try {
+                            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                            sdf.parse(raw.replace(Regex("\\+\\d{2}:?\\d{2}$"), "").replace(Regex("\\.\\d+$"), ""))?.time
+                                ?: System.currentTimeMillis()
+                        } catch (e: Exception) { System.currentTimeMillis() }
+                    } else System.currentTimeMillis()
+                }
                 AppState.addOrUpdateOrder(OrderItem(
                     requestId = requestId,
                     orderLabel = "طلب شحن",
                     expectedAmount = obj.optDouble("amount_requested", 0.0),
                     status = OrderStatus.PENDING,
-                    createdAt = System.currentTimeMillis(),
+                    createdAt = requestCreatedAtMs,
                     updatedAt = System.currentTimeMillis(),
                     orderNumber = orderNumber,
                     creditsRequested = if (obj.has("credits_requested") && !obj.isNull("credits_requested")) obj.getInt("credits_requested") else null,
