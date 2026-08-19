@@ -1,0 +1,7 @@
+-- ═══════════════════════════════════════════════════════════════════════
+-- Migration 00067: إصلاح scan_status القادمة من confirm_payment_order
+-- المشكلة: amount_mismatch و sender_phone_mismatch يرجعان 'manual_review'
+-- الإصلاح: scan_status صحيح لكل حالة + تحديث wallet_topup_requests في كل مسار
+-- ═══════════════════════════════════════════════════════════════════════
+-- (الدالة الكاملة applied مباشرة على Supabase عبر supabase_apply_migration)
+-- هذا الملف للتوثيق فقط — الـ migration طُبّق بنجاح.

@@ -282,21 +282,20 @@ object TaskScanner {
             }
         }
 
-        // Best match: score 4 = both amount and phone match
+        // أفضل تطابق: phone + amount معاً (score 4)
         val best = candidates.maxByOrNull { it.score }
         if (best != null && best.amountMatch && best.phoneMatch) {
             return ScanResult.Success(best)
         }
 
-        // Amount mismatch: found a message from same sender but amount differs
-        val phoneOnlyMatch = candidates.filter { it.phoneMatch && !it.amountMatch }
+        // ── المبدأ: الجهاز يبلّغ عن أفضل SMS وجده — السيرفر هو من يقرر القبول أو الرفض ──
+        // لو وجد SMS برقم مُحوِّل صحيح لكن مبلغ مختلف → نبعث success مع البيانات الكاملة
+        // السيرفر سيقارن المبلغ ويرجع amount_mismatch أو manual_review حسب منطقه
+        val phoneOnlyMatch = candidates.filter { it.phoneMatch }
         if (phoneOnlyMatch.isNotEmpty()) {
             val closest = phoneOnlyMatch.maxByOrNull { it.score }!!
-            return ScanResult.AmountMismatch(
-                closest,
-                expectedAmount = task.fingerprintAmount ?: task.amountRequested,
-                foundAmount = closest.amount ?: 0.0
-            )
+            Log.d(TAG, "Phone match found (amount differs): phone=${closest.senderPhone} found=${closest.amount} expected=${task.fingerprintAmount ?: task.amountRequested} tx=${closest.transactionId} — sending to server for decision")
+            return ScanResult.Success(closest)
         }
 
         if (candidates.isEmpty()) {

@@ -259,12 +259,17 @@ object AppState {
      */
     fun onServerConfirm(requestId: String, taskId: String, scanStatus: String, ok: Boolean, orderNumber: Long?) {
         val finalStatus = when {
-            ok && scanStatus == "confirmed"    -> OrderStatus.COMPLETED
-            scanStatus == "duplicate"          -> OrderStatus.DUPLICATE
-            scanStatus == "manual_review"      -> OrderStatus.MANUAL_REVIEW
-            scanStatus == "rejected"           -> OrderStatus.NOT_FOUND
-            !ok                                -> OrderStatus.FAILED
-            else                               -> OrderStatus.COMPLETED
+            ok && scanStatus == "confirmed"         -> OrderStatus.COMPLETED
+            scanStatus == "duplicate"               -> OrderStatus.DUPLICATE
+            // amount_mismatch: السيرفر وجد SMS لكن المبلغ مختلف
+            scanStatus == "amount_mismatch"         -> OrderStatus.AMOUNT_MISMATCH
+            // manual_review من السيرفر = مراجعة يدوية حقيقية (مش نتيجة مبلغ)
+            scanStatus == "manual_review"           -> OrderStatus.MANUAL_REVIEW
+            scanStatus == "rejected"                -> OrderStatus.NOT_FOUND
+            scanStatus == "not_found"               -> OrderStatus.NOT_FOUND
+            scanStatus == "failed"                  -> OrderStatus.FAILED
+            !ok                                     -> OrderStatus.FAILED
+            else                                    -> OrderStatus.COMPLETED
         }
         val current = orders.value?.toMutableList() ?: return
         val idx = current.indexOfFirst { it.requestId == requestId }
@@ -293,6 +298,14 @@ object AppState {
                     title = "عملية مكررة ✗",
                     message = "رقم العملية استُخدم مسبقاً — الطلب مرفوض",
                     type = NotificationType.ERROR,
+                    referenceId = requestId
+                )
+            }
+            OrderStatus.AMOUNT_MISMATCH -> notifyOnce(requestId, OrderStatus.AMOUNT_MISMATCH) {
+                DeviceNotification(
+                    title = "مبلغ غير مطابق ✗",
+                    message = "المبلغ الموجود في الرسالة لا يطابق المطلوب — الطلب مرفوض",
+                    type = NotificationType.ORDER_MISMATCH,
                     referenceId = requestId
                 )
             }
