@@ -15,6 +15,7 @@ import {
   Github,
   Smartphone,
   Tag,
+  FlaskConical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -33,6 +34,7 @@ const navItems = [
   { label: 'GitHub', path: '/admin/github', icon: Github },
   { label: 'أجهزة SMS',        path: '/admin/sms-devices', icon: Smartphone },
   { label: 'عروض الكريدت',     path: '/admin/packages',    icon: Tag },
+  { label: 'طلب اختبار شحن',  path: '/admin/test-order',  icon: FlaskConical },
 ];
 
 function NavContent({ onClose }: { onClose?: () => void }) {

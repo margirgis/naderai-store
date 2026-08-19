@@ -24,6 +24,7 @@ import AdminServicesPage from './pages/admin/AdminServicesPage';
 import AdminGithubPage from './pages/admin/AdminGithubPage';
 import AdminSmsDevicesPage from './pages/admin/AdminSmsDevicesPage';
 import AdminPackagesPage from './pages/admin/AdminPackagesPage';
+import AdminTestOrderPage from './pages/admin/AdminTestOrderPage';
 import type { ReactNode } from 'react';
 
 export interface RouteConfig {
@@ -52,6 +53,7 @@ export const routes: RouteConfig[] = [
   { name: 'GitHub',           path: '/admin/github',    element: <AdminGithubPage />,      access: 'admin' },
   { name: 'SMS Devices',      path: '/admin/sms-devices', element: <AdminSmsDevicesPage />, access: 'admin' },
   { name: 'Credit Packages',  path: '/admin/packages',    element: <AdminPackagesPage />,   access: 'admin' },
+  { name: 'Test Order',       path: '/admin/test-order',  element: <AdminTestOrderPage />,  access: 'admin' },
 
   // ─── Customer Store ────────────────────────────────────────
   { name: 'Store Dashboard',  path: '/store',                   element: <CustomerDashboardPage />, access: 'customer' },
