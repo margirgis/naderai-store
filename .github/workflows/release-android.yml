@@ -45,10 +45,6 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > signing/release.keystore
-
       - name: Grant execute permission
         run: chmod +x ./gradlew || true
 
@@ -56,9 +52,9 @@ jobs:
         run: |
           gradle :app:assembleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/signing/release.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+            -Pandroid.injected.signing.store.password=naderai2024 \
+            -Pandroid.injected.signing.key.alias=naderai \
+            -Pandroid.injected.signing.key.password=naderai2024
 
       - name: Rename APK
         run: mv app/build/outputs/apk/release/app-release.apk "naderai-sms-reader-v${{ steps.version.outputs.VERSION }}.apk"
