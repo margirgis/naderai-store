@@ -77,7 +77,7 @@ interface DashboardStats {
   admin_offline_count: number; reopened: number; total: number;
   device_online: boolean; last_heartbeat_at: string | null; pending_queue: number;
 }
-type FilterStatus = 'all'|'review'|'pending'|'scanning'|'approved'|'rejected'|'expired'|'reopened';
+type FilterStatus = 'all'|'review'|'pending'|'scanning'|'approved'|'confirmed'|'rejected'|'failed'|'expired'|'reopened';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Open-case dialog
@@ -166,17 +166,24 @@ export default function AdminTopupRequestsPage() {
     if (data) setStats(data as DashboardStats);
   }, []);
 
-  // ── Load list ──────────────────────────────────────────────────────
+  // ── Load list — NEVER filters out confirmed/failed/expired ────────
   const load = useCallback(async () => {
     setLoading(true);
     let q = supabase
       .from('wallet_topup_requests')
       .select('*, profiles!customer_id(id, email, full_name, phone, wallet_balance, credits_balance)')
       .order('created_at', { ascending: false })
-      .limit(120);
-    if (filter === 'review')   q = q.in('status', ['pending','scanning']);
-    else if (filter === 'scanning') q = q.eq('scan_status','scanning');
-    else if (filter !== 'all') q = q.eq('status', filter);
+      .limit(200); // show full history
+
+    // 'review' = active/in-progress only; 'all' = everything; others = exact match
+    if (filter === 'review') {
+      q = q.in('status', ['pending','scanning','waiting_for_verification','admin_offline']);
+    } else if (filter === 'approved' || filter === 'confirmed') {
+      q = q.in('status', ['approved','confirmed']);
+    } else if (filter !== 'all') {
+      q = q.eq('status', filter as string);
+    }
+    // 'all' → no filter, returns every status including confirmed/failed/expired
 
     const { data } = await q;
     const rows = (data ?? []) as unknown as WalletTopupRequest[];
@@ -188,32 +195,68 @@ export default function AdminTopupRequestsPage() {
     loadStats();
   }, [filter, loadStats]);
 
-  // ── Realtime ───────────────────────────────────────────────────────
+  // ── Realtime — wallet_topup_requests + payment_orders ─────────────
   useEffect(() => {
     load();
-    const ch = supabase.channel(`admin-topup-${Date.now()}`)
-      .on('postgres_changes', { event:'*', schema:'public', table:'wallet_topup_requests' }, p => {
-        if (p.eventType === 'INSERT') {
-          const r = p.new as WalletTopupRequest;
-          const ss = (r as any).scan_status as string|undefined;
-          const match = filter==='all'
-            || (filter==='review' && ['pending','scanning'].includes(r.status))
-            || (filter==='scanning' && ss==='scanning')
-            || (!['review','scanning'].includes(filter) && r.status===filter);
-          if (match) { setRequests(prev => [r,...prev]); toast.info('📥 طلب شحن جديد وصل!'); }
-          loadStats();
-        } else if (p.eventType === 'UPDATE') {
-          const u = p.new as WalletTopupRequest;
-          setRequests(prev => prev.map(r => r.id===u.id ? {...r,...u} : r));
-          if (['approved','confirmed'].includes(u.status)) toast.success('✅ تم تأكيد طلب شحن');
-          if ((u as any).verification_status === 'admin_offline') toast.warning('⚠️ جهاز التأكيد غير متصل');
-          loadStats();
+    const ch = supabase.channel(`admin-topup-rt-${Date.now()}`)
+      // wallet_topup_requests: new orders + status updates
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wallet_topup_requests' }, p => {
+        const r = p.new as WalletTopupRequest;
+        const ss = (r as any).scan_status as string | undefined;
+        // Always add to list if viewing 'all'; otherwise match filter
+        const matchesFilter =
+          filter === 'all'
+          || (filter === 'review' && ['pending','scanning','waiting_for_verification','admin_offline'].includes(r.status))
+          || (filter === 'approved' || filter === 'confirmed'
+              ? ['approved','confirmed'].includes(r.status)
+              : r.status === filter)
+          || (filter === 'scanning' && ss === 'scanning');
+        if (matchesFilter) {
+          setRequests(prev => [r, ...prev]);
+          toast.info('📥 طلب شحن جديد وصل!');
         }
+        loadStats();
       })
-      .on('postgres_changes', { event:'*', schema:'public', table:'payment_orders' }, () => loadStats())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wallet_topup_requests' }, p => {
+        const u = p.new as WalletTopupRequest;
+        // Always update in-place — NEVER remove from list on status change
+        setRequests(prev => prev.map(r => r.id === u.id ? { ...r, ...u } : r));
+        if (['approved','confirmed'].includes(u.status)) toast.success('✅ تم تأكيد طلب شحن');
+        if ((u as any).verification_status === 'admin_offline') toast.warning('⚠️ جهاز التأكيد غير متصل');
+        loadStats();
+      })
+      // payment_orders: status sync → update matched topup card in real time
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_orders' }, p => {
+        const po = p.new as Record<string, unknown>;
+        const poId = po.id as string;
+        // Reflect payment_order status on the linked topup_request card
+        setRequests(prev => prev.map(r => {
+          if ((r as any).payment_order_id === poId) {
+            const newStatus = po.status as string;
+            // Map payment_order status → topup_request status
+            const mappedStatus =
+              newStatus === 'confirmed' ? 'approved' :
+              newStatus === 'failed'    ? 'rejected' :
+              newStatus;
+            return {
+              ...r,
+              status: mappedStatus as WalletTopupRequest['status'],
+              verification_status: po.verification_status as string,
+              transaction_id: (po.transaction_id as string) ?? r.transaction_id,
+              failure_reason: (po.failure_reason as string) ?? r.failure_reason,
+            } as WalletTopupRequest;
+          }
+          return r;
+        }));
+        if (po.status === 'confirmed') toast.success('✅ تم تأكيد الطلب من خلال payment_orders');
+        loadStats();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_orders' }, () => {
+        loadStats();
+      })
       .subscribe();
     channelRef.current = ch;
-    return () => { supabase.removeChannel(ch).catch(()=>{}); };
+    return () => { supabase.removeChannel(ch).catch(() => {}); };
   }, [load, filter, loadStats]);
 
   const toggleExpand = (id: string) =>
@@ -389,11 +432,13 @@ export default function AdminTopupRequestsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="review">قيد المراجعة</SelectItem>
-              <SelectItem value="all">جميع الطلبات</SelectItem>
+              <SelectItem value="review">قيد المراجعة (نشط)</SelectItem>
+              <SelectItem value="all">جميع الطلبات (كل الحالات)</SelectItem>
               <SelectItem value="pending">معلق</SelectItem>
               <SelectItem value="scanning">جاري الفحص</SelectItem>
               <SelectItem value="approved">تمت الموافقة</SelectItem>
+              <SelectItem value="confirmed">مؤكد</SelectItem>
+              <SelectItem value="failed">فشل</SelectItem>
               <SelectItem value="rejected">مرفوض</SelectItem>
               <SelectItem value="expired">منتهي الصلاحية</SelectItem>
               <SelectItem value="reopened">أُعيد فتحه</SelectItem>
