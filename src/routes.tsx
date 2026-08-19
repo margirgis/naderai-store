@@ -1,31 +1,34 @@
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import ProviderPanelPage from './pages/ProviderPanelPage';
-// Customer pages
-import RegisterPage from './pages/customer/RegisterPage';
-import CustomerDashboardPage from './pages/customer/CustomerDashboardPage';
-import ServiceCatalogPage from './pages/customer/ServiceCatalogPage';
-import OrderFormPage from './pages/customer/OrderFormPage';
-import MyOrdersPage from './pages/customer/MyOrdersPage';
-import OrderDetailPage from './pages/customer/OrderDetailPage';
-import ActivationLinkPage from './pages/customer/ActivationLinkPage';
-import CustomerWalletPage from './pages/customer/CustomerWalletPage';
-import CustomerTopupRequestPage from './pages/customer/CustomerTopupRequestPage';
-import CustomerProfilePage from './pages/customer/CustomerProfilePage';
-import PaymentOrderPage from './pages/customer/PaymentOrderPage';
-import ActivePaymentPage from './pages/customer/ActivePaymentPage';
-// Admin pages
-import AdminCustomersPage from './pages/admin/AdminCustomersPage';
-import AdminOrdersPage from './pages/admin/AdminOrdersPage';
-import AdminOrderDetailPage from './pages/admin/AdminOrderDetailPage';
-import AdminWalletPage from './pages/admin/AdminWalletPage';
-import AdminTopupRequestsPage from './pages/admin/AdminTopupRequestsPage';
-import AdminServicesPage from './pages/admin/AdminServicesPage';
-import AdminGithubPage from './pages/admin/AdminGithubPage';
-import AdminSmsDevicesPage from './pages/admin/AdminSmsDevicesPage';
-import AdminPackagesPage from './pages/admin/AdminPackagesPage';
-import AdminTestOrderPage from './pages/admin/AdminTestOrderPage';
+import { lazy } from 'react';
 import type { ReactNode } from 'react';
+
+// ── Lazy imports — كل صفحة تُحمَّل عند الحاجة فقط ──────────────────
+const LoginPage             = lazy(() => import('./pages/LoginPage'));
+const DashboardPage         = lazy(() => import('./pages/DashboardPage'));
+const ProviderPanelPage     = lazy(() => import('./pages/ProviderPanelPage'));
+// Customer pages
+const RegisterPage              = lazy(() => import('./pages/customer/RegisterPage'));
+const CustomerDashboardPage     = lazy(() => import('./pages/customer/CustomerDashboardPage'));
+const ServiceCatalogPage        = lazy(() => import('./pages/customer/ServiceCatalogPage'));
+const OrderFormPage             = lazy(() => import('./pages/customer/OrderFormPage'));
+const MyOrdersPage              = lazy(() => import('./pages/customer/MyOrdersPage'));
+const OrderDetailPage           = lazy(() => import('./pages/customer/OrderDetailPage'));
+const ActivationLinkPage        = lazy(() => import('./pages/customer/ActivationLinkPage'));
+const CustomerWalletPage        = lazy(() => import('./pages/customer/CustomerWalletPage'));
+const CustomerTopupRequestPage  = lazy(() => import('./pages/customer/CustomerTopupRequestPage'));
+const CustomerProfilePage       = lazy(() => import('./pages/customer/CustomerProfilePage'));
+const PaymentOrderPage          = lazy(() => import('./pages/customer/PaymentOrderPage'));
+const ActivePaymentPage         = lazy(() => import('./pages/customer/ActivePaymentPage'));
+// Admin pages
+const AdminCustomersPage        = lazy(() => import('./pages/admin/AdminCustomersPage'));
+const AdminOrdersPage           = lazy(() => import('./pages/admin/AdminOrdersPage'));
+const AdminOrderDetailPage      = lazy(() => import('./pages/admin/AdminOrderDetailPage'));
+const AdminWalletPage           = lazy(() => import('./pages/admin/AdminWalletPage'));
+const AdminTopupRequestsPage    = lazy(() => import('./pages/admin/AdminTopupRequestsPage'));
+const AdminServicesPage         = lazy(() => import('./pages/admin/AdminServicesPage'));
+const AdminGithubPage           = lazy(() => import('./pages/admin/AdminGithubPage'));
+const AdminSmsDevicesPage       = lazy(() => import('./pages/admin/AdminSmsDevicesPage'));
+const AdminPackagesPage         = lazy(() => import('./pages/admin/AdminPackagesPage'));
+const AdminTestOrderPage        = lazy(() => import('./pages/admin/AdminTestOrderPage'));
 
 export interface RouteConfig {
   name: string;

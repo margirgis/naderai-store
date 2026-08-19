@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import IntersectObserver from '@/components/common/IntersectObserver';
 import { Toaster } from '@/components/ui/sonner';
@@ -62,13 +62,21 @@ function AppRoutes() {
   );
 }
 
+const PageLoader = () => (
+  <div className="min-h-screen bg-background flex items-center justify-center">
+    <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+  </div>
+);
+
 const App: React.FC = () => {
   return (
     <Router>
       <TooltipProvider>
         <AuthProvider>
           <IntersectObserver />
-          <AppRoutes />
+          <Suspense fallback={<PageLoader />}>
+            <AppRoutes />
+          </Suspense>
           <Toaster richColors position="top-right" />
         </AuthProvider>
       </TooltipProvider>
