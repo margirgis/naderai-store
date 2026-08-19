@@ -175,9 +175,10 @@ export default function AdminTopupRequestsPage() {
       .order('created_at', { ascending: false })
       .limit(200); // show full history
 
-    // 'review' = active/in-progress only; 'all' = everything; others = exact match
+    // 'review' = active/in-progress — INCLUDES approved so confirmed orders don't vanish
+    // 'all' = everything; others = exact match
     if (filter === 'review') {
-      q = q.in('status', ['pending','scanning','waiting_for_verification','admin_offline']);
+      q = q.in('status', ['pending','scanning','waiting_for_verification','admin_offline','approved','confirmed']);
     } else if (filter === 'approved' || filter === 'confirmed') {
       q = q.in('status', ['approved','confirmed']);
     } else if (filter !== 'all') {
@@ -203,14 +204,15 @@ export default function AdminTopupRequestsPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wallet_topup_requests' }, p => {
         const r = p.new as WalletTopupRequest;
         const ss = (r as any).scan_status as string | undefined;
-        // Always add to list if viewing 'all'; otherwise match filter
+        // review includes approved/confirmed so newly confirmed orders stay visible
+        const reviewStatuses = ['pending','scanning','waiting_for_verification','admin_offline','approved','confirmed'];
         const matchesFilter =
           filter === 'all'
-          || (filter === 'review' && ['pending','scanning','waiting_for_verification','admin_offline'].includes(r.status))
-          || (filter === 'approved' || filter === 'confirmed'
-              ? ['approved','confirmed'].includes(r.status)
-              : r.status === filter)
-          || (filter === 'scanning' && ss === 'scanning');
+          || (filter === 'review'    && reviewStatuses.includes(r.status))
+          || (filter === 'approved'  && ['approved','confirmed'].includes(r.status))
+          || (filter === 'confirmed' && ['approved','confirmed'].includes(r.status))
+          || (filter === 'scanning'  && (r.status === 'scanning' || ss === 'scanning'))
+          || (filter === r.status);
         if (matchesFilter) {
           setRequests(prev => [r, ...prev]);
           toast.info('📥 طلب شحن جديد وصل!');
@@ -219,36 +221,35 @@ export default function AdminTopupRequestsPage() {
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wallet_topup_requests' }, p => {
         const u = p.new as WalletTopupRequest;
-        // Always update in-place — NEVER remove from list on status change
+        // Always update in-place — status change never removes from list
         setRequests(prev => prev.map(r => r.id === u.id ? { ...r, ...u } : r));
-        if (['approved','confirmed'].includes(u.status)) toast.success('✅ تم تأكيد طلب شحن');
+        if (['approved','confirmed'].includes(u.status)) toast.success('✅ تم تأكيد طلب شحن — الموقع مُحدَّث');
+        if ((u as any).scan_status === 'approved') toast.success('✅ scan_status=approved');
         if ((u as any).verification_status === 'admin_offline') toast.warning('⚠️ جهاز التأكيد غير متصل');
         loadStats();
       })
-      // payment_orders: status sync → update matched topup card in real time
+      // payment_orders UPDATE: fallback sync in case wallet_topup_requests RT fires first
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_orders' }, p => {
         const po = p.new as Record<string, unknown>;
         const poId = po.id as string;
-        // Reflect payment_order status on the linked topup_request card
         setRequests(prev => prev.map(r => {
-          if ((r as any).payment_order_id === poId) {
-            const newStatus = po.status as string;
-            // Map payment_order status → topup_request status
-            const mappedStatus =
-              newStatus === 'confirmed' ? 'approved' :
-              newStatus === 'failed'    ? 'rejected' :
-              newStatus;
-            return {
-              ...r,
-              status: mappedStatus as WalletTopupRequest['status'],
-              verification_status: po.verification_status as string,
-              transaction_id: (po.transaction_id as string) ?? r.transaction_id,
-              failure_reason: (po.failure_reason as string) ?? r.failure_reason,
-            } as WalletTopupRequest;
-          }
-          return r;
+          if ((r as any).payment_order_id !== poId) return r;
+          const newStatus = po.status as string;
+          // Only apply if topup row isn't already approved (prevent downgrade)
+          if (['approved','confirmed'].includes(r.status)) return r;
+          const mappedStatus =
+            newStatus === 'confirmed' ? 'approved' :
+            newStatus === 'failed'    ? 'rejected'  :
+            newStatus;
+          return {
+            ...r,
+            status: mappedStatus as WalletTopupRequest['status'],
+            verification_status: po.verification_status as string,
+            transaction_id: (po.transaction_id as string) ?? r.transaction_id,
+            failure_reason: (po.failure_reason as string) ?? r.failure_reason,
+          } as WalletTopupRequest;
         }));
-        if (po.status === 'confirmed') toast.success('✅ تم تأكيد الطلب من خلال payment_orders');
+        if (po.status === 'confirmed') toast.success('✅ تم تأكيد الطلب (payment_orders sync)');
         loadStats();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_orders' }, () => {
