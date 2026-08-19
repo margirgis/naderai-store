@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { supabase } from '@/db/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import type { WalletTopupRequest, Profile } from '@/types/types';
 import { toast } from 'sonner';
 
@@ -151,6 +152,7 @@ function InfoRow({ label, value, ltr, mono, cls, suffix, onCopy }: {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AdminTopupRequestsPage() {
   const navigate = useNavigate();
+  const { session, loading: authLoading } = useAuth();
   const [requests,    setRequests]    = useState<WalletTopupRequest[]>([]);
   const [customers,   setCustomers]   = useState<Record<string, Profile>>({});
   const [loading,     setLoading]     = useState(true);
@@ -166,12 +168,14 @@ export default function AdminTopupRequestsPage() {
 
   // ── Stats from backend RPC ─────────────────────────────────────────
   const loadStats = useCallback(async () => {
+    if (!session) return;
     const { data } = await supabase.rpc('get_topup_dashboard_stats');
     if (data) setStats(data as DashboardStats);
-  }, []);
+  }, [session]);
 
   // ── Load list — NEVER filters out confirmed/failed/expired ────────
   const load = useCallback(async () => {
+    if (!session) return;
     setLoading(true);
     let q = supabase
       .from('wallet_topup_requests')
@@ -271,6 +275,7 @@ export default function AdminTopupRequestsPage() {
   }, [filter, loadStats]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (authLoading || !session) return;
     load();
     connectRealtime();
     const handleOnline = () => { retryCountRef.current = 0; connectRealtime(); };
@@ -280,7 +285,7 @@ export default function AdminTopupRequestsPage() {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current).catch(() => {});
     };
-  }, [load, connectRealtime]);
+  }, [load, connectRealtime, authLoading, session]);
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
