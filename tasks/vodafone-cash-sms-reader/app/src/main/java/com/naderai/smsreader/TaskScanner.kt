@@ -158,6 +158,17 @@ object TaskScanner {
                     onSent = { success ->
                         onResult?.invoke(lastResult, success)
                         Unit
+                    },
+                    onServerResponse = { scanStatus, ok ->
+                        // ── P0 FIX: السيرفر هو من يقرر — نحدث الحالة بناءً على رده ──
+                        Log.d(TAG, "[SERVER_CONFIRM] task=${task.taskId} scan_status=$scanStatus ok=$ok")
+                        AppState.onServerConfirm(
+                            requestId   = task.requestId,
+                            taskId      = task.taskId,
+                            scanStatus  = scanStatus,
+                            ok          = ok,
+                            orderNumber = task.orderNumber
+                        )
                     }
                 )
             } catch (e: Exception) {
@@ -302,7 +313,8 @@ object TaskScanner {
         webhookUrl: String,
         secret: String,
         onSent: ((Boolean) -> Unit)? = null,
-        notifyUi: Boolean = true
+        notifyUi: Boolean = true,
+        onServerResponse: ((scanStatus: String, ok: Boolean) -> Unit)? = null
     ) {
         val idempotencyKey = "${task.taskId}-${task.requestId}"
         val resultStatus = when (result) {
@@ -312,8 +324,6 @@ object TaskScanner {
             is ScanResult.Failure -> "failure"
         }
 
-        // إذا كان هناك جلسة أدمن، نرسل النتيجة عبر endpoint الأدمن بدون Webhook Secret
-        // تحقق أن لديك access_token فعلي وليس null — لو null استخدم webhook عادي
         val accessToken = if (AdminSession.isLoggedIn(context)) AdminSession.accessToken(context) else null
         if (!accessToken.isNullOrEmpty()) {
             val adminUrl = SupabaseConfig.getAdminTaskResultUrl(
@@ -322,9 +332,8 @@ object TaskScanner {
             )
             if (!adminUrl.isNullOrEmpty()) {
                 Log.d(TAG, "Sending task result via admin endpoint for task ${task.taskId}")
-                sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus, onSent, notifyUi) { success ->
+                sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus, onSent, notifyUi, onServerResponse) { success ->
                     if (!success && webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
-                        // fallback: لو فشل admin endpoint، جرب webhook العادي
                         Log.w(TAG, "Admin endpoint failed, falling back to webhook for task ${task.taskId}")
                         sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent, notifyUi)
                     } else {
@@ -406,6 +415,7 @@ object TaskScanner {
         resultStatus: String,
         onSent: ((Boolean) -> Unit)? = null,
         notifyUi: Boolean = true,
+        onServerResponse: ((scanStatus: String, ok: Boolean) -> Unit)? = null,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         val accessToken = AdminSession.accessToken(context) ?: return
@@ -439,58 +449,57 @@ object TaskScanner {
                     "scanned_at"       to isoFmt.format(Date())
                 )
             }
-            is ScanResult.NotFound -> {
-                mapOf(
-                    "reason" to result.reason,
-                    "scanned_at" to isoFmt.format(Date())
-                )
-            }
-            is ScanResult.Failure -> {
-                mapOf(
-                    "reason" to result.reason,
-                    "scanned_at" to isoFmt.format(Date())
-                )
-            }
+            is ScanResult.NotFound -> mapOf("reason" to result.reason, "scanned_at" to isoFmt.format(Date()))
+            is ScanResult.Failure  -> mapOf("reason" to result.reason, "scanned_at" to isoFmt.format(Date()))
         }
 
         val failureReason = when (result) {
-            is ScanResult.Failure -> result.reason
-            is ScanResult.NotFound -> result.reason
+            is ScanResult.Failure        -> result.reason
+            is ScanResult.NotFound       -> result.reason
             is ScanResult.AmountMismatch -> "مبلغ غير مطابق: وجد ${result.foundAmount} والمطلوب ${result.expectedAmount}"
             else -> null
         }
 
         val body = mutableMapOf<String, Any>(
-            "device_id" to HeartbeatManager.getDeviceId(context),
-            "access_token" to accessToken,
-            "refresh_token" to (refreshToken ?: ""),
-            "task_id" to task.taskId,
-            "request_id" to task.requestId,
-            "status" to resultStatus,
+            "device_id"       to HeartbeatManager.getDeviceId(context),
+            "access_token"    to accessToken,
+            "refresh_token"   to (refreshToken ?: ""),
+            "task_id"         to task.taskId,
+            "request_id"      to task.requestId,
+            "status"          to resultStatus,
             "idempotency_key" to idempotencyKey
         )
-
         body["result_data"] = resultData
         if (!failureReason.isNullOrEmpty()) body["failure_reason"] = failureReason
         if (!task.paymentOrderId.isNullOrEmpty()) body["payment_order_id"] = task.paymentOrderId
-        if (!task.orderExpiresAt.isNullOrEmpty()) body["order_expires_at"] = task.orderExpiresAt
+        if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
 
         WebhookSender.sendAdminTaskResult(adminUrl, body) { success, msg, responseBody ->
             Log.d(TAG, "Admin task result sent: $success — $msg")
             if (success) {
                 try {
                     val obj = org.json.JSONObject(responseBody)
+                    // ── P0 FIX: قراءة scan_status من رد السيرفر ─────────────
+                    // السيرفر يرجع: { ok: bool, scan_status: "confirmed"|"duplicate"|"rejected"|... }
+                    val serverOk         = obj.optBoolean("ok", false)
+                    val serverScanStatus = obj.optString("scan_status", "").ifEmpty {
+                        if (serverOk) "confirmed" else "rejected"
+                    }
+                    Log.d(TAG, "[SERVER_DECISION] task=${task.taskId} scan_status=$serverScanStatus ok=$serverOk")
+                    onServerResponse?.invoke(serverScanStatus, serverOk)
+
+                    // تحديث الـ tokens لو السيرفر أعاد tokens مجددة
                     val tokens = obj.optJSONObject("tokens")
                     if (tokens != null) {
-                        val newAccess = tokens.optString("access_token")
+                        val newAccess  = tokens.optString("access_token")
                         val newRefresh = tokens.optString("refresh_token")
-                        val expiresAt = tokens.optLong("expires_at", 0L)
+                        val expiresAt  = tokens.optLong("expires_at", 0L)
                         if (newAccess.isNotEmpty()) {
                             AdminSession.updateTokens(context, newAccess, newRefresh, expiresAt)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse refreshed tokens: ${e.message}")
+                    Log.w(TAG, "Failed to parse server response: ${e.message}")
                 }
             }
             if (notifyUi) taskResultCallback?.invoke(task, result)

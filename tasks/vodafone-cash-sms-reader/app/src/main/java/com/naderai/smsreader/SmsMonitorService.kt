@@ -134,16 +134,23 @@ class SmsMonitorService : Service() {
                 if (!success) {
                     TaskResultCache.incrementRetry(context, task.taskId)
                 }
+                // ── P0 FIX: قراءة رد السيرفر لتحديد الحالة النهائية ────────────
+                // sendAdminTaskResult يُعيد responseBody — نقرأه في TaskScanner.taskResultCallback
+                // لكن scanAndReport يستدعي sendTaskResult داخلياً مع onSent فقط.
+                // الحل: نستعمل TaskScanner.taskResultCallback لتحديث الحالة المحلية بعد رد السيرفر.
             }
         }
 
         private fun applyCachedStatus(requestId: String, cached: TaskResultCache.CachedResult) {
+            // حالة الكاش تعكس ما أرسله الجهاز — ليس قرار السيرفر.
+            // نضع MANUAL_REVIEW لو success (السيرفر لم يرد بعد من الكاش)
+            // أو الحالات الأخرى مباشرة.
             val status = when (cached.status) {
-                "success" -> OrderStatus.COMPLETED
-                "amount_mismatch" -> OrderStatus.AMOUNT_MISMATCH
-                "not_found" -> OrderStatus.NOT_FOUND
-                "failure" -> OrderStatus.FAILED
-                else -> OrderStatus.PENDING
+                "success"        -> OrderStatus.MANUAL_REVIEW
+                "amount_mismatch"-> OrderStatus.AMOUNT_MISMATCH
+                "not_found"      -> OrderStatus.NOT_FOUND
+                "failure"        -> OrderStatus.FAILED
+                else             -> OrderStatus.PENDING
             }
             if (status != OrderStatus.PENDING) {
                 AppState.updateOrderStatus(requestId, status)

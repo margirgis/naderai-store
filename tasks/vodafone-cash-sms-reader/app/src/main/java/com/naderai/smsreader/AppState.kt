@@ -153,9 +153,12 @@ object AppState {
         when (result) {
             is TaskScanner.ScanResult.Success -> {
                 lastFoundTransaction.postValue(result.message.transactionId)
+                // ── P0 FIX: لا نضع COMPLETED هنا — الـ App وجد الـ SMS فقط.
+                // القرار النهائي (تأكيد أو رفض مكرر) يعود من السيرفر.
+                // نضع MANUAL_REVIEW (جاري المراجعة) مؤقتاً حتى يرد السيرفر.
                 updateOrderAfterScan(task.requestId) {
                     it.copy(
-                        status = OrderStatus.COMPLETED,
+                        status = OrderStatus.MANUAL_REVIEW,
                         transactionId = result.message.transactionId ?: it.transactionId,
                         amountFound = result.message.amount ?: it.amountFound,
                         senderPhoneFound = result.message.senderPhone ?: it.senderPhoneFound,
@@ -167,12 +170,11 @@ object AppState {
                     )
                 }
                 OrderEventLogger.matchFound(task.requestId, task.orderNumber, result.message.transactionId)
-                OrderEventLogger.orderConfirmed(task.requestId, task.orderNumber, result.message.transactionId)
-                notifyOnce(task.requestId, OrderStatus.COMPLETED) {
+                notifyOnce(task.requestId, OrderStatus.MANUAL_REVIEW) {
                     DeviceNotification(
-                        title = "تم التأكيد والإكمال ✓",
+                        title = "تم العثور على العملية — جاري المراجعة",
                         message = "المبلغ: ${result.message.amount} — رقم العملية: ${result.message.transactionId ?: "—"}",
-                        type = NotificationType.ORDER_CONFIRMED,
+                        type = NotificationType.INFO,
                         referenceId = task.requestId
                     )
                 }
@@ -248,6 +250,62 @@ object AppState {
         if (notifiedFinalStatuses[requestId] == status) return
         notifiedFinalStatuses[requestId] = status
         addNotification(build())
+    }
+
+    /**
+     * يُستدعى بعد رد السيرفر على task_result — يحدد الحالة النهائية.
+     * scan_status من السيرفر: "confirmed" → COMPLETED، "duplicate" → DUPLICATE،
+     * "rejected"/"failed"/"manual_review" → حالاتهم.
+     */
+    fun onServerConfirm(requestId: String, taskId: String, scanStatus: String, ok: Boolean, orderNumber: Long?) {
+        val finalStatus = when {
+            ok && scanStatus == "confirmed"    -> OrderStatus.COMPLETED
+            scanStatus == "duplicate"          -> OrderStatus.DUPLICATE
+            scanStatus == "manual_review"      -> OrderStatus.MANUAL_REVIEW
+            scanStatus == "rejected"           -> OrderStatus.NOT_FOUND
+            !ok                                -> OrderStatus.FAILED
+            else                               -> OrderStatus.COMPLETED
+        }
+        val current = orders.value?.toMutableList() ?: return
+        val idx = current.indexOfFirst { it.requestId == requestId }
+        if (idx >= 0) {
+            current[idx] = current[idx].withSnapshotPreserved(
+                current[idx].copy(status = finalStatus, updatedAt = System.currentTimeMillis())
+            )
+            orders.postValue(current)
+            refreshCounts(current)
+        }
+        // إشعار الحالة النهائية للمستخدم
+        when (finalStatus) {
+            OrderStatus.COMPLETED -> {
+                OrderEventLogger.orderConfirmed(requestId, orderNumber, current.getOrNull(idx)?.transactionId)
+                notifyOnce(requestId, OrderStatus.COMPLETED) {
+                    DeviceNotification(
+                        title = "تم التأكيد والإكمال ✓",
+                        message = "تم تأكيد الطلب من السيرفر",
+                        type = NotificationType.ORDER_CONFIRMED,
+                        referenceId = requestId
+                    )
+                }
+            }
+            OrderStatus.DUPLICATE -> notifyOnce(requestId, OrderStatus.DUPLICATE) {
+                DeviceNotification(
+                    title = "عملية مكررة ✗",
+                    message = "رقم العملية استُخدم مسبقاً — الطلب مرفوض",
+                    type = NotificationType.ERROR,
+                    referenceId = requestId
+                )
+            }
+            OrderStatus.NOT_FOUND -> notifyOnce(requestId, OrderStatus.NOT_FOUND) {
+                DeviceNotification(
+                    title = "رُفض الطلب",
+                    message = "لم يتم التحقق من العملية",
+                    type = NotificationType.ERROR,
+                    referenceId = requestId
+                )
+            }
+            else -> {}
+        }
     }
 
     fun updateOrderStatus(requestId: String, status: OrderStatus) {
