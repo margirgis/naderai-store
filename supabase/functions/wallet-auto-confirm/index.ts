@@ -335,6 +335,8 @@ Deno.serve(async (req: Request) => {
 
   // ── Task Result ───────────────────────────────────────────────────────────
   if (isTaskResult(payload)) {
+    console.log(`[TRANSACTION_CHECK] task_result received | task_id=${payload.task_id} device=${payload.device_id} status=${payload.status} tx=${payload.result_data?.transaction_id ?? 'none'} amount=${payload.result_data?.amount ?? 'none'}`);
+
     // Idempotency: check if this task_id was already completed
     if (payload.idempotency_key) {
       const { data: existing } = await db
@@ -343,6 +345,7 @@ Deno.serve(async (req: Request) => {
         .eq('id', payload.task_id)
         .single();
       if (existing?.task_status === 'completed') {
+        console.log(`[TRANSACTION_ALREADY_USED] idempotent retry task_id=${payload.task_id} result_status=${existing.result_status}`);
         return jsonResponse({ ok: true, idempotent: true, result_status: existing.result_status });
       }
     }
@@ -354,9 +357,12 @@ Deno.serve(async (req: Request) => {
       .eq('id', payload.task_id)
       .maybeSingle();
 
+    console.log(`[ORDER_FOUND] task_id=${payload.task_id} payment_order_id=${taskRow?.payment_order_id ?? 'none'} expires=${taskRow?.order_expires_at ?? 'none'}`);
+
     if (taskRow?.order_expires_at) {
       const expiresAt = new Date(taskRow.order_expires_at as string).getTime();
       if (Date.now() > expiresAt) {
+        console.log(`[ORDER_EXPIRED] task_id=${payload.task_id} expires_at=${taskRow.order_expires_at}`);
         await db.rpc('complete_device_task', {
           p_task_id: payload.task_id,
           p_status: 'failure',
@@ -368,7 +374,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // complete_device_task now handles both payment_orders and legacy topup requests
+    if (payload.status === 'success' && payload.result_data?.transaction_id) {
+      console.log(`[SMS_FOUND] task_id=${payload.task_id} tx=${payload.result_data.transaction_id} amount=${payload.result_data.amount} sender=${payload.result_data.sender_phone ?? 'unknown'}`);
+    } else if (payload.status === 'not_found') {
+      console.log(`[SMS_NOT_FOUND] task_id=${payload.task_id} device=${payload.device_id}`);
+    } else if (payload.status === 'amount_mismatch') {
+      console.log(`[AMOUNT_MISMATCH] task_id=${payload.task_id} amount=${payload.result_data?.amount} reason=${payload.failure_reason ?? ''}`);
+    } else if (payload.status === 'duplicate') {
+      console.log(`[TRANSACTION_ALREADY_USED] task_id=${payload.task_id} tx=${payload.result_data?.transaction_id ?? 'unknown'}`);
+    } else if (payload.status === 'failure') {
+      console.log(`[SCAN_FAILURE] task_id=${payload.task_id} reason=${payload.failure_reason ?? 'unknown'}`);
+    }
+
+    // complete_device_task handles both payment_orders and legacy topup requests
     const { data, error } = await db.rpc('complete_device_task', {
       p_task_id: payload.task_id,
       p_status: payload.status,
@@ -376,18 +394,28 @@ Deno.serve(async (req: Request) => {
       p_failure_reason: payload.failure_reason ?? null,
       p_idempotency_key: payload.idempotency_key ?? null,
     });
-    if (error) return errorResponse(`ORDER_DELIVERY_FAILED: ${error.message}`, 500);
+    if (error) {
+      console.error(`[SCAN_FAILURE] complete_device_task RPC error task_id=${payload.task_id}: ${error.message}`);
+      return errorResponse(`ORDER_DELIVERY_FAILED: ${error.message}`, 500);
+    }
+
+    const result = (data ?? {}) as Record<string, unknown>;
+    const scanStatus = typeof result.scan_status === 'string' ? result.scan_status : payload.status;
+
+    if (result.ok === true && scanStatus === 'confirmed') {
+      console.log(`[PAYMENT_CONFIRMED] task_id=${payload.task_id} order_id=${taskRow?.payment_order_id} tx=${payload.result_data?.transaction_id} credits=${result.credits_added ?? 'unknown'}`);
+    } else if (result.ok === false) {
+      console.log(`[ORDER_UPDATED] task_id=${payload.task_id} scan_status=${scanStatus} reason=${result.reason ?? 'unknown'}`);
+    }
 
     // Notify admin of scan result
     const statusLabels: Record<string, string> = {
-      success: 'تم العثور على العملية ✓',
-      not_found: 'لم يتم العثور',
-      failure: 'فشل الفحص',
-      amount_mismatch: 'مبلغ غير مطابق',
-      duplicate: 'عملية مكررة',
+      success:        'تم العثور على العملية ✓',
+      not_found:      'لم يتم العثور',
+      failure:        'فشل الفحص',
+      amount_mismatch:'مبلغ غير مطابق',
+      duplicate:      'عملية مكررة',
     };
-    const result = (data ?? {}) as Record<string, unknown>;
-    const scanStatus = typeof result.scan_status === 'string' ? result.scan_status : payload.status;
     const referenceId = (taskRow?.payment_order_id as string) ?? payload.task_id;
     await db.rpc('create_admin_notification', {
       p_title: statusLabels[payload.status] ?? `نتيجة الفحص: ${scanStatus}`,
@@ -397,6 +425,7 @@ Deno.serve(async (req: Request) => {
       p_device_id: payload.device_id,
     });
 
+    console.log(`[ORDER_UPDATED] FINAL task_id=${payload.task_id} scan_status=${scanStatus} ok=${result.ok}`);
     return jsonResponse({ ok: true, scan_status: scanStatus, ...result });
   }
 
