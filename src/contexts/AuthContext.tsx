@@ -58,16 +58,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    // Initial session check
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      if (!mounted) return;
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        await fetchProfile(s.user.id);
-      }
-      setLoading(false);
-    });
+    // Initial session check — always setLoading(false) via finally, even on network error
+    supabase.auth.getSession()
+      .then(async ({ data: { session: s } }) => {
+        if (!mounted) return;
+        setSession(s);
+        setUser(s?.user ?? null);
+        if (s?.user) {
+          await fetchProfile(s.user.id).catch((e) =>
+            console.error('[AuthContext] fetchProfile failed:', e)
+          );
+        }
+      })
+      .catch((e) => {
+        console.error('[AuthContext] getSession failed:', e);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
     // Auth state changes (login / logout / token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, s) => {
@@ -75,8 +83,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        // Don't setLoading(false) here — initial load already handles it
-        await fetchProfile(s.user.id);
+        await fetchProfile(s.user.id).catch((e) =>
+          console.error('[AuthContext] fetchProfile on auth change failed:', e)
+        );
       } else {
         setProfile(null);
       }
