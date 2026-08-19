@@ -2,6 +2,10 @@ package com.naderai.smsreader
 import com.naderai.smsreader.BuildConfig
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
@@ -18,11 +22,20 @@ class HeartbeatManager(
     private var wasConnected = false
     private var registered = false
 
+    // ── Exponential backoff state ─────────────────────────────────
+    @Volatile private var consecutiveFailures = 0
+    @Volatile private var isRunning = false
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     companion object {
         // 10s عند وجود مهام قيد الفحص للحصول على Live Update، 60s في حالة الخمول
         private const val HEARTBEAT_INTERVAL_ACTIVE_MS = 10_000L
         private const val HEARTBEAT_INTERVAL_IDLE_MS = 60_000L
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        // Exponential backoff constants
+        private const val BACKOFF_BASE_MS  = 2_000L
+        private const val BACKOFF_MAX_MS   = 30_000L
+        private const val MAX_BACKOFF_STEPS = 8
         const val PREFS_NAME = "naderai_sms_reader"
         const val KEY_DEVICE_ID = "device_id"
 
@@ -51,18 +64,24 @@ class HeartbeatManager(
     }
 
     fun start() {
+        isRunning = true
+        consecutiveFailures = 0
         // Always register first, then start heartbeat loop
         registerDevice()
         handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_ACTIVE_MS)
+        registerNetworkCallback()
     }
 
     fun stop() {
-        handler.removeCallbacks(heartbeatRunnable)
+        isRunning = false
+        handler.removeCallbacksAndMessages(null)
+        unregisterNetworkCallback()
     }
 
     /** مزامنة فورية — تُستخدم عند إعادة الاتصال أو بدء التطبيق */
     fun forceSync() {
         handler.removeCallbacks(heartbeatRunnable)
+        consecutiveFailures = 0
         registerDevice()
         // بعد التسجيل سيرسل Heartbeat أول مباشرةً
         handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_ACTIVE_MS)
@@ -130,6 +149,7 @@ class HeartbeatManager(
             onStatusChange(success, if (success) "متصل" else "غير متصل: $message")
             AppState.updateFromHeartbeat(success, if (success) "متصل بالسيرفر" else "غير متصل: $message")
             if (success) {
+                consecutiveFailures = 0
                 parseHeartbeatResponse(responseBody)
                 if (justReconnected) {
                     AppState.addNotification(DeviceNotification(
@@ -145,7 +165,69 @@ class HeartbeatManager(
                     message = "REALTIME_SUBSCRIPTION_FAILED: $message",
                     type = NotificationType.ERROR
                 ))
+                scheduleBackoffRetry()
             }
+        }
+    }
+
+    // ── Exponential backoff — على فشل Heartbeat ──────────────────
+    private fun scheduleBackoffRetry() {
+        consecutiveFailures++
+        if (consecutiveFailures > MAX_BACKOFF_STEPS) {
+            // أوقف الـ periodic timer — ننتظر NetworkCallback
+            handler.removeCallbacks(heartbeatRunnable)
+            android.util.Log.w("HeartbeatManager", "Max retries ($MAX_BACKOFF_STEPS). Waiting for network.")
+            return
+        }
+        val delay = minOf(BACKOFF_BASE_MS * (1L shl (consecutiveFailures - 1)), BACKOFF_MAX_MS)
+        android.util.Log.d("HeartbeatManager", "Heartbeat failed ($consecutiveFailures). Retry in ${delay}ms")
+        handler.removeCallbacks(heartbeatRunnable)
+        handler.postDelayed({
+            if (!isRunning) return@postDelayed
+            sendHeartbeat()
+            val hasPending = (AppState.pendingTasks.value?.size ?: 0) > 0
+            val interval = if (hasPending) HEARTBEAT_INTERVAL_ACTIVE_MS else HEARTBEAT_INTERVAL_IDLE_MS
+            handler.postDelayed(heartbeatRunnable, interval)
+        }, delay)
+    }
+
+    // ── NetworkCallback — يُعيد الاتصال فور عودة الشبكة ─────────
+    private fun registerNetworkCallback() {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as? ConnectivityManager ?: return
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    android.util.Log.d("HeartbeatManager", "Network available — reconnecting")
+                    handler.post {
+                        if (!isRunning) return@post
+                        consecutiveFailures = 0
+                        handler.removeCallbacks(heartbeatRunnable)
+                        sendHeartbeat()
+                        val hasPending = (AppState.pendingTasks.value?.size ?: 0) > 0
+                        val interval = if (hasPending) HEARTBEAT_INTERVAL_ACTIVE_MS else HEARTBEAT_INTERVAL_IDLE_MS
+                        handler.postDelayed(heartbeatRunnable, interval)
+                    }
+                }
+            }
+            val req = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(req, cb)
+            networkCallback = cb
+        } catch (e: Exception) {
+            android.util.Log.w("HeartbeatManager", "registerNetworkCallback: ${e.message}")
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as? ConnectivityManager ?: return
+            networkCallback?.let { cm.unregisterNetworkCallback(it) }
+            networkCallback = null
+        } catch (e: Exception) {
+            android.util.Log.w("HeartbeatManager", "unregisterNetworkCallback: ${e.message}")
         }
     }
 
