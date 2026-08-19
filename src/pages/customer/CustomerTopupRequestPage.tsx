@@ -4,7 +4,7 @@ import {
   Wallet, Loader2, MessageCircle, Clock, CheckCircle2, XCircle,
   AlertCircle, ArrowLeft, Phone, Zap, PackageOpen, Star, Tag,
   ScanLine, AlertTriangle, ShieldAlert, Search, CreditCard, ExternalLink,
-  ChevronDown, ChevronUp, Info,
+  ChevronDown, ChevronUp, Info, MessageSquare,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -45,26 +45,102 @@ interface PaymentOrderSummary {
   has_active: boolean;
 }
 
-// خريطة شاملة لحالات الطلب — تشمل scan_status أيضاً
+// خريطة شاملة لحالات الطلب — تشمل status و scan_status معاً
+// الأولوية: scan_status='duplicate' > status='rejected' (تمنع عرض "مرفوض" بدلاً من "مكرر")
 const STATUS_CONFIG: Record<string, {
   label: string;
   icon: React.ElementType;
   colorClass: string;
 }> = {
-  pending:         { label: 'قيد المراجعة',       icon: Clock,         colorClass: 'bg-amber-500/10 text-amber-500' },
-  scanning:        { label: 'جاري الفحص',          icon: ScanLine,      colorClass: 'bg-blue-500/10 text-blue-500' },
-  rescanning:      { label: 'إعادة الفحص',         icon: ScanLine,      colorClass: 'bg-blue-400/10 text-blue-400' },
-  approved:        { label: 'تمت الموافقة ✓',      icon: CheckCircle2,  colorClass: 'bg-green-500/10 text-green-500' },
-  rejected:        { label: 'مرفوض',               icon: XCircle,       colorClass: 'bg-destructive/10 text-destructive' },
-  not_found:       { label: 'لم يتم العثور',       icon: Search,        colorClass: 'bg-muted/40 text-muted-foreground' },
-  amount_mismatch: { label: 'مبلغ غير مطابق',      icon: AlertTriangle, colorClass: 'bg-orange-500/10 text-orange-500' },
-  failed:          { label: 'فشل الفحص',           icon: XCircle,       colorClass: 'bg-destructive/10 text-destructive' },
-  duplicate:       { label: 'عملية مكررة',         icon: ShieldAlert,   colorClass: 'bg-purple-500/10 text-purple-500' },
+  pending:                  { label: 'قيد المراجعة',       icon: Clock,         colorClass: 'bg-amber-500/10 text-amber-500' },
+  scanning:                 { label: 'جاري الفحص',          icon: ScanLine,      colorClass: 'bg-blue-500/10 text-blue-500' },
+  rescanning:               { label: 'إعادة الفحص',         icon: ScanLine,      colorClass: 'bg-blue-400/10 text-blue-400' },
+  waiting_for_verification: { label: 'جاري الفحص',          icon: ScanLine,      colorClass: 'bg-blue-500/10 text-blue-500' },
+  approved:                 { label: 'تمت الموافقة ✓',      icon: CheckCircle2,  colorClass: 'bg-green-500/10 text-green-500' },
+  confirmed:                { label: 'تمت الموافقة ✓',      icon: CheckCircle2,  colorClass: 'bg-green-500/10 text-green-500' },
+  rejected:                 { label: 'مرفوض',               icon: XCircle,       colorClass: 'bg-destructive/10 text-destructive' },
+  not_found:                { label: 'لم يتم العثور',       icon: Search,        colorClass: 'bg-muted/40 text-muted-foreground' },
+  amount_mismatch:          { label: 'مبلغ غير مطابق',      icon: AlertTriangle, colorClass: 'bg-orange-500/10 text-orange-500' },
+  failed:                   { label: 'فشل الفحص',           icon: XCircle,       colorClass: 'bg-destructive/10 text-destructive' },
+  // scan_status=duplicate يغلب على status=rejected — يجب أن يظهر "عملية مكررة" لا "مرفوض"
+  duplicate:                { label: 'عملية مكررة ⚠️',     icon: ShieldAlert,   colorClass: 'bg-purple-500/10 text-purple-500' },
+  manual_review:            { label: 'قيد المراجعة اليدوية', icon: AlertCircle, colorClass: 'bg-amber-500/10 text-amber-500' },
 };
+
+// حساب displayKey الصحيح: scan_status=duplicate يأخذ الأولوية دائماً
+function resolveDisplayKey(status: string, scanStatus?: string): string {
+  if (scanStatus === 'duplicate')        return 'duplicate';
+  if (scanStatus === 'amount_mismatch')  return 'amount_mismatch';
+  if (scanStatus === 'not_found')        return 'not_found';
+  if (scanStatus && STATUS_CONFIG[scanStatus]) return scanStatus;
+  if (STATUS_CONFIG[status])             return status;
+  return 'pending';
+}
 
 // مولّد مفتاح idempotency للعميل (لمنع الإرسال المزدوج فقط — الـ fingerprint يأتي من Server)
 function generateIdempotencyKey() {
   return `ik_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+// ── Hook: Realtime مع إعادة الاتصال التلقائي ──────────────────────────────
+function useRealtimeTopup(
+  profileId: string | undefined,
+  onUpdate: (updated: WalletTopupRequest) => void,
+) {
+  const channelRef    = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+  const maxRetries    = 8;
+
+  const connect = useCallback(() => {
+    if (!profileId) return;
+    // تنظيف القناة القديمة
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current).catch(() => {});
+    }
+
+    const ch = supabase
+      .channel(`customer-topup-rt-${profileId}-${Date.now()}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'wallet_topup_requests',
+        filter: `customer_id=eq.${profileId}`,
+      }, (payload) => {
+        retryCountRef.current = 0; // اتصال ناجح — أعد عداد المحاولات
+        onUpdate(payload.new as WalletTopupRequest);
+      })
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          retryCountRef.current = 0;
+        } else if (
+          status === 'CHANNEL_ERROR' ||
+          status === 'TIMED_OUT' ||
+          status === 'CLOSED'
+        ) {
+          // انقطاع — أعد الاتصال مع backoff أسي
+          if (retryCountRef.current < maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
+            retryCountRef.current++;
+            if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = setTimeout(() => connect(), delay);
+          }
+        }
+      });
+    channelRef.current = ch;
+  }, [profileId, onUpdate]);
+
+  useEffect(() => {
+    connect();
+    // إعادة الاتصال عند عودة الشبكة
+    const handleOnline = () => { retryCountRef.current = 0; connect(); };
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (channelRef.current) supabase.removeChannel(channelRef.current).catch(() => {});
+    };
+  }, [connect]);
 }
 
 export default function CustomerTopupRequestPage() {
@@ -80,7 +156,6 @@ export default function CustomerTopupRequestPage() {
   const [idempotencyKey, setIdempotencyKey] = useState(generateIdempotencyKey);
   const [historyTab, setHistoryTab] = useState<'open' | 'done' | 'all'>('all');
   const [detailRequest, setDetailRequest] = useState<WalletTopupRequest | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const submittedRef = useRef(false);
 
   // حساب السعر المقدّر (للعرض فقط — الـ fingerprint يأتي من Server)
@@ -91,6 +166,27 @@ export default function CustomerTopupRequestPage() {
   const baseAmount = creditNum * pricePerCredit;
   const originalAmount = creditNum * originalPricePerCredit;
   const savedAmount = originalAmount - baseAmount;
+
+  // ── Handler لتحديث الطلبات من Realtime (stable ref) ─────────────
+  const handleRealtimeUpdate = useCallback((updated: WalletTopupRequest) => {
+    setRequests(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+    const scanStatus = (updated as any).scan_status as string;
+    const key = resolveDisplayKey(updated.status, scanStatus);
+    if (key === 'approved' || key === 'confirmed') {
+      toast.success('✅ تم تأكيد طلب شحن رصيدك!');
+    } else if (key === 'duplicate') {
+      toast.error('⚠️ عملية مكررة — رقم العملية تم استخدامه مسبقاً.');
+    } else if (key === 'amount_mismatch') {
+      toast.warning('⚠️ المبلغ غير مطابق — تأكد من تحويل المبلغ بالقروش بالضبط.');
+    } else if (key === 'not_found') {
+      toast.info('لم يتم العثور على رسالة مطابقة. قد يستغرق بعض الوقت.');
+    } else if (key === 'rejected') {
+      toast.error('تم رفض طلب الشحن. تواصل مع الدعم.');
+    }
+  }, []);
+
+  // ── Realtime مع إعادة الاتصال التلقائي ──────────────────────────
+  useRealtimeTopup(profile?.id, handleRealtimeUpdate);
 
   useEffect(() => {
     // تحميل العروض النشطة
@@ -127,37 +223,6 @@ export default function CustomerTopupRequestPage() {
   }, [profile?.id]);
 
   useEffect(() => { load(); }, [load]);
-
-  // اشتراك Realtime لتحديث حالة الطلبات لحظياً
-  useEffect(() => {
-    if (!profile?.id) return;
-    const ch = supabase
-      .channel(`customer-topup-${profile.id}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'wallet_topup_requests',
-        filter: `customer_id=eq.${profile.id}`,
-      }, (payload) => {
-        const updated = payload.new as WalletTopupRequest;
-        setRequests((prev) =>
-          prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
-        );
-        const scanStatus = (updated as any).scan_status as string;
-        if (updated.status === 'approved') {
-          toast.success('✅ تم تأكيد طلب شحن رصيدك!');
-        } else if (scanStatus === 'amount_mismatch') {
-          toast.warning('⚠️ المبلغ غير مطابق — تأكد من تحويل المبلغ بالقروش بالضبط.');
-        } else if (scanStatus === 'not_found') {
-          toast.info('لم يتم العثور على رسالة مطابقة. قد يستغرق بعض الوقت.');
-        } else if (updated.status === 'rejected') {
-          toast.error('تم رفض طلب الشحن. تواصل مع الدعم.');
-        }
-      })
-      .subscribe();
-    channelRef.current = ch;
-    return () => { supabase.removeChannel(ch).catch(() => {}); };
-  }, [profile?.id]);
 
   // عند اختيار عرض: ضبط الكريدت تلقائياً
   const handleSelectPackage = (pkg: CreditPackage) => {
@@ -450,11 +515,15 @@ export default function CustomerTopupRequestPage() {
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             ) : (() => {
+              // terminal = scan_status takes priority (duplicate/amount_mismatch override rejected)
+              const isTerminalStatus = (r: WalletTopupRequest) => {
+                const ss = (r as any).scan_status as string | undefined;
+                const key = resolveDisplayKey(r.status, ss);
+                return ['approved','confirmed','rejected','failed','duplicate','not_found','amount_mismatch'].includes(key);
+              };
               const filtered = requests.filter(r => {
-                const terminalStatuses = ['approved', 'rejected', 'failed', 'duplicate', 'not_found', 'amount_mismatch'];
-                const isTerminal = terminalStatuses.includes(r.status);
-                if (historyTab === 'open') return !isTerminal;
-                if (historyTab === 'done') return isTerminal;
+                if (historyTab === 'open') return !isTerminalStatus(r);
+                if (historyTab === 'done') return isTerminalStatus(r);
                 return true;
               });
               if (filtered.length === 0) {
@@ -468,30 +537,33 @@ export default function CustomerTopupRequestPage() {
                 <div className="divide-y divide-border">
                   {filtered.map((r) => {
                     const scanStatus = (r as any).scan_status as string | undefined;
-                    const displayKey = scanStatus && STATUS_CONFIG[scanStatus]
-                      ? scanStatus
-                      : (STATUS_CONFIG[r.status] ? r.status : 'pending');
+                    // استخدام resolveDisplayKey بدلاً من المقارنة اليدوية — يضمن أن duplicate يظهر دائماً
+                    const displayKey = resolveDisplayKey(r.status, scanStatus);
                     const cfg = STATUS_CONFIG[displayKey];
                     const Icon = cfg.icon;
-                    const cr  = (r as any).credits_requested as number | null;
-                    const fp  = (r as any).fingerprint_amount as number | null;
+                    const cr   = (r as any).credits_requested as number | null;
+                    const fp   = (r as any).fingerprint_amount as number | null;
                     const auto = (r as any).matched_automatically as boolean | null;
                     const notesVal = (r as any).notes as string | null;
                     const orderIdMatch = notesVal?.match(/payment_order_id:([0-9a-f-]{36})/);
-                    const paymentOrderId = orderIdMatch?.[1] ?? null;
+                    const paymentOrderId = orderIdMatch?.[1] ?? (r as any).payment_order_id ?? null;
+                    const openStatuses = ['pending','scanning','waiting_for_verification','rescanning'];
 
                     return (
                       <div key={r.id} className="p-4 flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground">
+                            طلب شحن #{(r as any).order_number ?? r.id.slice(0,8)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
                             {cr ? `${cr} Credit` : `${r.amount.toFixed(2)} جنيه`}
                           </p>
                           {fp && (
                             <p className="text-xs text-muted-foreground font-mono" dir="ltr">
-                              المبلغ: {fp.toFixed(2)} جنيه
+                              {fp.toFixed(2)} جنيه
                             </p>
                           )}
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {new Date(r.created_at).toLocaleString('ar-EG')}
                           </p>
                           {auto && (
@@ -499,7 +571,7 @@ export default function CustomerTopupRequestPage() {
                               <Zap className="w-3 h-3" /> موافقة تلقائية
                             </p>
                           )}
-                          {paymentOrderId && ['pending', 'scanning'].includes(r.status) && (
+                          {paymentOrderId && openStatuses.includes(r.status) && (
                             <button
                               type="button"
                               onClick={() => navigate(`/store/wallet/payment/${paymentOrderId}`)}
@@ -515,7 +587,6 @@ export default function CustomerTopupRequestPage() {
                             <Icon className="w-3.5 h-3.5" />
                             {cfg.label}
                           </div>
-                          {/* زر التفاصيل */}
                           <button
                             type="button"
                             onClick={() => setDetailRequest(r)}
@@ -542,28 +613,44 @@ export default function CustomerTopupRequestPage() {
             </DialogHeader>
             {detailRequest && (() => {
               const r = detailRequest;
-              const scanStatus = (r as any).scan_status as string | undefined;
-              const displayKey = scanStatus && STATUS_CONFIG[scanStatus]
-                ? scanStatus : (STATUS_CONFIG[r.status] ? r.status : 'pending');
-              const cfg = STATUS_CONFIG[displayKey];
+              const scanStatus  = (r as any).scan_status as string | undefined;
+              const displayKey  = resolveDisplayKey(r.status, scanStatus);
+              const cfg  = STATUS_CONFIG[displayKey];
               const Icon = cfg.icon;
-              const cr  = (r as any).credits_requested as number | null;
-              const fp  = (r as any).fingerprint_amount as number | null;
+              const cr   = (r as any).credits_requested as number | null;
+              const fp   = (r as any).fingerprint_amount as number | null;
               const auto = (r as any).matched_automatically as boolean | null;
-              const failReason = r.failure_reason;
-              const notesVal = (r as any).notes as string | null;
+              const smsBody     = (r as any).sms_body as string | null;
+              const senderName  = (r as any).sender_name as string | null;
+              const senderPhone = (r as any).sender_phone_confirmed as string | null;
+              const txId        = (r as any).transaction_id as string | null;
+              const notesVal    = (r as any).notes as string | null;
               const orderIdMatch = notesVal?.match(/payment_order_id:([0-9a-f-]{36})/);
-              const paymentOrderId = orderIdMatch?.[1] ?? null;
+              const paymentOrderId = orderIdMatch?.[1] ?? (r as any).payment_order_id ?? null;
+              const openStatuses = ['pending','scanning','waiting_for_verification','rescanning'];
 
               const rows: { label: string; value: string; mono?: boolean }[] = [
-                { label: 'رقم الطلب',   value: r.id.slice(0, 8) + '…', mono: true },
-                { label: 'المبلغ',       value: cr ? `${cr} Credit` : `${r.amount.toFixed(2)} جنيه` },
+                { label: 'رقم الطلب',     value: `#${(r as any).order_number ?? r.id.slice(0,8)}`, mono: true },
+                { label: 'الكريدات',       value: cr ? `${cr} Credit` : '—' },
+                { label: 'المبلغ التقريبي', value: `${r.amount.toFixed(2)} جنيه` },
                 ...(fp ? [{ label: 'المبلغ بالقروش', value: `${fp.toFixed(2)} جنيه`, mono: true }] : []),
-                { label: 'الحالة',       value: cfg.label },
-                { label: 'نوع الدفع',   value: 'فودافون كاش' },
+                { label: 'الحالة',         value: cfg.label },
+                ...(txId ? [{ label: 'رقم العملية', value: txId, mono: true }] : []),
+                ...(senderName  ? [{ label: 'اسم المحول',   value: senderName }] : []),
+                ...(senderPhone ? [{ label: 'رقم المحول',   value: senderPhone, mono: true }] : []),
                 { label: 'تاريخ الإنشاء', value: new Date(r.created_at).toLocaleString('ar-EG') },
                 ...(auto ? [{ label: 'الموافقة', value: 'تلقائية ⚡' }] : []),
               ];
+
+              // رسالة حسب النوع للحالات الغير ناجحة
+              const failMsgMap: Record<string, string> = {
+                not_found:       'لم يتم العثور على معاملة مطابقة. تأكد من إتمام التحويل ثم تواصل مع الدعم.',
+                amount_mismatch: 'المبلغ المُحوَّل لا يطابق المطلوب. تواصل مع الدعم لمراجعة الطلب.',
+                failed:          'حدث خطأ أثناء معالجة الطلب. تواصل مع الدعم.',
+                rejected:        'تم رفض الطلب. تواصل مع الدعم للاستفسار.',
+                duplicate:       'رقم العملية هذا تم استخدامه مسبقاً في طلب آخر. لا يمكن قبول نفس رقم العملية مرتين.',
+              };
+              const failMsg = failMsgMap[displayKey] ?? null;
 
               return (
                 <div className="space-y-4">
@@ -583,26 +670,31 @@ export default function CustomerTopupRequestPage() {
                     ))}
                   </div>
 
-                  {/* سبب الرفض — رسالة مستخدم لطيفة بدون تفاصيل تقنية */}
-                  {(['rejected','failed','not_found','amount_mismatch'].includes(r.status) ||
-                    ['rejected','failed','not_found','amount_mismatch'].includes(scanStatus ?? '')) && (() => {
-                    const st = scanStatus && STATUS_CONFIG[scanStatus] ? scanStatus : r.status;
-                    const userMsg =
-                      st === 'not_found'       ? 'لم يتم العثور على معاملة مطابقة. تأكد من إتمام التحويل ثم تواصل مع الدعم.' :
-                      st === 'amount_mismatch' ? 'المبلغ المُحوَّل لا يطابق المطلوب. تواصل مع الدعم لمراجعة الطلب.' :
-                      st === 'failed'          ? 'حدث خطأ أثناء معالجة الطلب. تواصل مع الدعم.' :
-                      st === 'rejected'        ? 'تم رفض الطلب. تواصل مع الدعم للاستفسار.' :
-                      'الطلب لم يكتمل. تواصل مع الدعم.';
-                    return (
-                      <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <p>{userMsg}</p>
+                  {/* رسالة SMS الأصلية */}
+                  {smsBody && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        رسالة الـ SMS المرصودة
+                      </p>
+                      <div className="p-3 rounded-lg bg-muted/40 border border-border">
+                        <p className="text-xs text-foreground leading-relaxed font-mono break-all" dir="auto">
+                          {smsBody}
+                        </p>
                       </div>
-                    );
-                  })()}
+                    </div>
+                  )}
+
+                  {/* سبب الرفض */}
+                  {failMsg && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <p>{failMsg}</p>
+                    </div>
+                  )}
 
                   {/* رابط إكمال الدفع */}
-                  {paymentOrderId && ['pending', 'scanning'].includes(r.status) && (
+                  {paymentOrderId && openStatuses.includes(r.status) && (
                     <button
                       type="button"
                       onClick={() => { setDetailRequest(null); navigate(`/store/wallet/payment/${paymentOrderId}`); }}

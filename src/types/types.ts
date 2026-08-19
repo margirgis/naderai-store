@@ -78,6 +78,11 @@ export interface WalletTopupRequest {
   updated_at: string;
   processed_at: string | null;
   processed_by: string | null;
+  // حقول SMS من migration 00062
+  sms_body: string | null;
+  sender_name_confirmed: string | null;
+  sender_phone_confirmed: string | null;
+  payment_order_id: string | null;
 }
 
 export interface SmsDevice {

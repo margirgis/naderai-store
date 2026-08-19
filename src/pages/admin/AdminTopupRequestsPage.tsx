@@ -158,7 +158,10 @@ export default function AdminTopupRequestsPage() {
   const [stats,       setStats]       = useState<DashboardStats | null>(null);
   const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
   const [caseTarget,  setCaseTarget]  = useState<WalletTopupRequest | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const channelRef    = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+  const maxRetries    = 8;
 
   // ── Stats from backend RPC ─────────────────────────────────────────
   const loadStats = useCallback(async () => {
@@ -196,16 +199,16 @@ export default function AdminTopupRequestsPage() {
     loadStats();
   }, [filter, loadStats]);
 
-  // ── Realtime — wallet_topup_requests + payment_orders ─────────────
-  useEffect(() => {
-    load();
+  // ── Realtime مع إعادة الاتصال التلقائي (exponential backoff) ──────
+  const connectRealtime = useCallback(() => {
+    if (channelRef.current) supabase.removeChannel(channelRef.current).catch(() => {});
+
+    const reviewStatuses = ['pending','scanning','waiting_for_verification','admin_offline','approved','confirmed'];
+
     const ch = supabase.channel(`admin-topup-rt-${Date.now()}`)
-      // wallet_topup_requests: new orders + status updates
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wallet_topup_requests' }, p => {
         const r = p.new as WalletTopupRequest;
         const ss = (r as any).scan_status as string | undefined;
-        // review includes approved/confirmed so newly confirmed orders stay visible
-        const reviewStatuses = ['pending','scanning','waiting_for_verification','admin_offline','approved','confirmed'];
         const matchesFilter =
           filter === 'all'
           || (filter === 'review'    && reviewStatuses.includes(r.status))
@@ -221,44 +224,59 @@ export default function AdminTopupRequestsPage() {
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wallet_topup_requests' }, p => {
         const u = p.new as WalletTopupRequest;
-        // Always update in-place — status change never removes from list
+        retryCountRef.current = 0;
         setRequests(prev => prev.map(r => r.id === u.id ? { ...r, ...u } : r));
-        if (['approved','confirmed'].includes(u.status)) toast.success('✅ تم تأكيد طلب شحن — الموقع مُحدَّث');
-        if ((u as any).scan_status === 'approved') toast.success('✅ scan_status=approved');
+        if (['approved','confirmed'].includes(u.status)) toast.success('✅ تم تأكيد طلب شحن');
         if ((u as any).verification_status === 'admin_offline') toast.warning('⚠️ جهاز التأكيد غير متصل');
         loadStats();
       })
-      // payment_orders UPDATE: fallback sync in case wallet_topup_requests RT fires first
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_orders' }, p => {
         const po = p.new as Record<string, unknown>;
         const poId = po.id as string;
         setRequests(prev => prev.map(r => {
           if ((r as any).payment_order_id !== poId) return r;
-          const newStatus = po.status as string;
-          // Only apply if topup row isn't already approved (prevent downgrade)
           if (['approved','confirmed'].includes(r.status)) return r;
+          const newStatus = po.status as string;
           const mappedStatus =
             newStatus === 'confirmed' ? 'approved' :
-            newStatus === 'failed'    ? 'rejected'  :
-            newStatus;
-          return {
-            ...r,
+            newStatus === 'failed'    ? 'rejected'  : newStatus;
+          return { ...r,
             status: mappedStatus as WalletTopupRequest['status'],
             verification_status: po.verification_status as string,
             transaction_id: (po.transaction_id as string) ?? r.transaction_id,
             failure_reason: (po.failure_reason as string) ?? r.failure_reason,
           } as WalletTopupRequest;
         }));
-        if (po.status === 'confirmed') toast.success('✅ تم تأكيد الطلب (payment_orders sync)');
         loadStats();
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_orders' }, () => {
-        loadStats();
-      })
-      .subscribe();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_orders' }, () => loadStats())
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          retryCountRef.current = 0;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // إعادة الاتصال مع backoff أسي — max 30ث
+          if (retryCountRef.current < 8) {
+            const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
+            retryCountRef.current++;
+            if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = setTimeout(() => connectRealtime(), delay);
+          }
+        }
+      });
     channelRef.current = ch;
-    return () => { supabase.removeChannel(ch).catch(() => {}); };
-  }, [load, filter, loadStats]);
+  }, [filter, loadStats]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    load();
+    connectRealtime();
+    const handleOnline = () => { retryCountRef.current = 0; connectRealtime(); };
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (channelRef.current) supabase.removeChannel(channelRef.current).catch(() => {});
+    };
+  }, [load, connectRealtime]);
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
