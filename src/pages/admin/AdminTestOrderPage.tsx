@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   FlaskConical, Search, Loader2, CheckCircle2, XCircle,
-  CreditCard, User, DollarSign, Hash, Clock, Info, Copy,
+  CreditCard, User, DollarSign, Hash, Clock, Info, Copy, Phone,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,12 @@ interface CreatedOrder {
   expected_amount: number;
   credits_qty: number;
   expires_at: string;
-  status: string;
+  topup_request_id: string;
+  sender_phone: string;
+  sender_name: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  vodafone_number: string | null;
 }
 
 export default function AdminTestOrderPage() {
@@ -45,6 +50,8 @@ export default function AdminTestOrderPage() {
   // ── بيانات الطلب ───────────────────────────────────────────
   const [creditsQty, setCreditsQty] = useState('');
   const [exactAmount, setExactAmount] = useState('');
+  const [senderPhone, setSenderPhone] = useState('');
+  const [senderName, setSenderName] = useState('');
   const [note, setNote] = useState('');
 
   // ── حالة الإرسال ───────────────────────────────────────────
@@ -92,6 +99,7 @@ export default function AdminTestOrderPage() {
 
     if (!Number.isInteger(qty) || qty < 1) { toast.error('عدد الكريدت غير صحيح'); return; }
     if (!isFinite(amt) || amt <= 0) { toast.error('المبلغ غير صحيح'); return; }
+    if (!senderPhone.trim()) { toast.error('رقم المحوّل مطلوب'); return; }
 
     setSubmitting(true);
     setCreatedOrder(null);
@@ -104,6 +112,8 @@ export default function AdminTestOrderPage() {
         customer_id: selectedCustomer.id,
         credits_qty: qty,
         exact_amount: amt,
+        sender_phone: senderPhone.trim(),
+        sender_name: senderName.trim() || undefined,
         note: note.trim() || undefined,
       },
     });
@@ -129,6 +139,8 @@ export default function AdminTestOrderPage() {
     setSearchQuery('');
     setCreditsQty('');
     setExactAmount('');
+    setSenderPhone('');
+    setSenderName('');
     setNote('');
     setCreatedOrder(null);
   };
@@ -290,6 +302,41 @@ export default function AdminTestOrderPage() {
                 </div>
               </div>
 
+              {/* رقم المحوّل */}
+              <div className="space-y-1.5">
+                <Label htmlFor="sender_phone" className="flex items-center gap-1.5 text-sm font-medium">
+                  <Phone className="w-3.5 h-3.5" />
+                  رقم المحوّل (رقم الهاتف الذي سيرسل منه)
+                </Label>
+                <Input
+                  id="sender_phone"
+                  type="tel"
+                  placeholder="مثال: 01222692182"
+                  value={senderPhone}
+                  onChange={e => setSenderPhone(e.target.value)}
+                  required
+                  dir="ltr"
+                />
+                <p className="text-xs text-muted-foreground">
+                  التطبيق سيبحث في رسائل SMS عن تحويل من هذا الرقم بالمبلغ المحدد
+                </p>
+              </div>
+
+              {/* اسم المُرسِل */}
+              <div className="space-y-1.5">
+                <Label htmlFor="sender_name" className="text-sm font-medium">
+                  اسم المُرسِل (اختياري)
+                </Label>
+                <Input
+                  id="sender_name"
+                  type="text"
+                  placeholder="مثال: نادر"
+                  value={senderName}
+                  onChange={e => setSenderName(e.target.value)}
+                  dir="rtl"
+                />
+              </div>
+
               {/* ملاحظة */}
               <div className="space-y-1.5">
                 <Label htmlFor="note" className="text-sm font-medium">
@@ -297,7 +344,7 @@ export default function AdminTestOrderPage() {
                 </Label>
                 <Textarea
                   id="note"
-                  placeholder="سبب الطلب التجريبي أو ما تختبره..."
+                  placeholder="سبب الطلب أو ما تختبره..."
                   value={note}
                   onChange={e => setNote(e.target.value)}
                   rows={2}
@@ -306,9 +353,9 @@ export default function AdminTestOrderPage() {
               </div>
 
               {/* Summary preview */}
-              {creditsQty && exactAmount && selectedCustomer && (
+              {creditsQty && exactAmount && senderPhone && selectedCustomer && (
                 <div className="p-3 rounded-lg bg-muted/60 border text-sm space-y-1.5">
-                  <p className="font-medium text-foreground">ملخص الطلب التجريبي:</p>
+                  <p className="font-medium text-foreground">ملخص الطلب:</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
                     <span>العميل:</span>
                     <span className="font-medium text-foreground truncate">{selectedCustomer.full_name ?? selectedCustomer.email}</span>
@@ -316,6 +363,8 @@ export default function AdminTestOrderPage() {
                     <span className="font-medium text-foreground" dir="ltr">{creditsQty} Credit</span>
                     <span>المبلغ المطلوب:</span>
                     <span className="font-bold text-primary" dir="ltr">{parseFloat(exactAmount || '0').toFixed(2)} جنيه</span>
+                    <span>رقم المحوّل:</span>
+                    <span className="font-medium text-foreground" dir="ltr">{senderPhone}</span>
                   </div>
                 </div>
               )}
@@ -323,7 +372,7 @@ export default function AdminTestOrderPage() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={submitting || !selectedCustomer || !creditsQty || !exactAmount}
+                disabled={submitting || !selectedCustomer || !creditsQty || !exactAmount || !senderPhone.trim()}
               >
                 {submitting
                   ? <><Loader2 className="w-4 h-4 animate-spin ml-2" />جاري الإنشاء...</>
@@ -340,11 +389,12 @@ export default function AdminTestOrderPage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base text-green-600 dark:text-green-400">
                 <CheckCircle2 className="w-5 h-5" />
-                تم إنشاء الطلب بنجاح
+                تم إنشاء الطلب وإرساله للجهاز ✅
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
+
                 {/* رقم الطلب */}
                 <div className="col-span-2 flex items-center justify-between p-3 rounded-md bg-background border">
                   <span className="text-muted-foreground">رقم الطلب</span>
@@ -357,6 +407,16 @@ export default function AdminTestOrderPage() {
                   </div>
                 </div>
 
+                {/* العميل */}
+                <div className="col-span-2 p-3 rounded-md bg-background border">
+                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    <User className="w-3 h-3" /> العميل
+                  </p>
+                  <p className="font-semibold text-foreground">{createdOrder.customer_name ?? '—'}</p>
+                  <p className="text-xs text-muted-foreground" dir="ltr">{createdOrder.customer_email}</p>
+                </div>
+
+                {/* المبلغ */}
                 <div className="p-3 rounded-md bg-background border">
                   <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                     <DollarSign className="w-3 h-3" /> المبلغ المطلوب
@@ -366,6 +426,7 @@ export default function AdminTestOrderPage() {
                   </p>
                 </div>
 
+                {/* الكريدت */}
                 <div className="p-3 rounded-md bg-background border">
                   <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                     <Hash className="w-3 h-3" /> الكريدت
@@ -375,6 +436,24 @@ export default function AdminTestOrderPage() {
                   </p>
                 </div>
 
+                {/* رقم المحوّل */}
+                <div className="col-span-2 flex items-center justify-between p-3 rounded-md bg-background border">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> رقم المحوّل المتوقع
+                    </p>
+                    <p className="font-semibold text-foreground" dir="ltr">{createdOrder.sender_phone}</p>
+                    {createdOrder.sender_name && (
+                      <p className="text-xs text-muted-foreground">{createdOrder.sender_name}</p>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0"
+                    onClick={() => copyToClipboard(createdOrder.sender_phone, 'رقم المحوّل')}>
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+
+                {/* انتهاء الطلب */}
                 <div className="col-span-2 p-3 rounded-md bg-background border">
                   <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                     <Clock className="w-3 h-3" /> ينتهي في
@@ -388,9 +467,9 @@ export default function AdminTestOrderPage() {
               <Separator />
 
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p>• الطلب مُرسَل للجهاز المتصل وسيبدأ الفحص تلقائياً.</p>
+                <p>• الطلب أُرسل للجهاز المتصل وبدأ الفحص تلقائياً.</p>
+                <p>• التطبيق سيبحث عن رسالة تحويل من <strong dir="ltr">{createdOrder.sender_phone}</strong> بمبلغ <strong>{Number(createdOrder.expected_amount).toFixed(2)} جنيه</strong>.</p>
                 <p>• يمكنك تتبع الطلب من صفحة <strong>طلبات الشحن</strong>.</p>
-                <p>• الطلب مُعلَّم بـ <code className="bg-muted px-1 rounded">is_test_order = true</code> في قاعدة البيانات.</p>
               </div>
 
               <Button variant="outline" className="w-full" onClick={reset}>
