@@ -11,8 +11,8 @@ android {
         applicationId = "com.naderai.appstore"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 41
+        versionName = "1.1.33"
     }
 
     signingConfigs {
