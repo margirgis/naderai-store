@@ -90,6 +90,7 @@ class NotificationsFragment : Fragment() {
                 text = when (n.type) {
                     NotificationType.CONNECTED -> "🟢"
                     NotificationType.ERROR -> "🔴"
+                    NotificationType.INFO -> "ℹ️"
                     NotificationType.ORDER_NEW -> "📋"
                     NotificationType.ORDER_CONFIRMED -> "✅"
                     NotificationType.ORDER_NOT_FOUND -> "❓"
