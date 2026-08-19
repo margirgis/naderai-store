@@ -126,7 +126,7 @@ object AppState {
             notifiedTaskIds.add(refId)
         }
         // منع إشعارات الاتصال/الحالة المتكررة
-        if (notification.type in setOf(NotificationType.CONNECTED, NotificationType.ERROR, NotificationType.SERVER_DOWN, NotificationType.TEST_SUCCESS)) {
+        if (notification.type in setOf(NotificationType.CONNECTED, NotificationType.ERROR, NotificationType.INFO, NotificationType.SERVER_DOWN, NotificationType.TEST_SUCCESS)) {
             val key = notification.type to notification.message
             if (key == lastConnectionNotification) return
             lastConnectionNotification = key
@@ -374,7 +374,7 @@ object AppState {
 }
 
 // ── Notification model ────────────────────────────────────────────────────
-enum class NotificationType { CONNECTED, ERROR, ORDER_NEW, ORDER_CONFIRMED, ORDER_NOT_FOUND, ORDER_MISMATCH, TEST_SUCCESS, TEST_RECEIVED, SERVER_DOWN }
+enum class NotificationType { CONNECTED, ERROR, INFO, ORDER_NEW, ORDER_CONFIRMED, ORDER_NOT_FOUND, ORDER_MISMATCH, TEST_SUCCESS, TEST_RECEIVED, SERVER_DOWN }
 
 data class DeviceNotification(
     val id: String = java.util.UUID.randomUUID().toString(),
