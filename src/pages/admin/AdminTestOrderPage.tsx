@@ -121,7 +121,10 @@ export default function AdminTestOrderPage() {
     setSubmitting(false);
 
     if (error || !data?.ok) {
-      toast.error('فشل إنشاء الطلب: ' + (data?.error ?? error?.message ?? 'خطأ غير معروف'));
+      const errMsg = error?.context
+        ? await (error.context as any).text?.().catch(() => error.message)
+        : error?.message;
+      toast.error('فشل إنشاء الطلب: ' + (data?.error ?? errMsg ?? 'خطأ غير معروف'));
       return;
     }
 

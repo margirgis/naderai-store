@@ -84,7 +84,10 @@ export default function AdminGithubPage() {
 
   const invoke = async (body: Record<string, unknown>) => {
     const { data, error } = await supabase.functions.invoke('github-integration', { body });
-    if (error) throw new Error(error.message);
+    if (error) {
+      const errMsg = error?.context ? await (error.context as any).text?.().catch(() => error.message) : error?.message;
+      throw new Error(errMsg);
+    }
     if (!data?.success && data?.error) throw new Error(data.error);
     return data;
   };

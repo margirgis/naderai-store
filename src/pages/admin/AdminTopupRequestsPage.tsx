@@ -305,7 +305,10 @@ export default function AdminTopupRequestsPage() {
         const { data, error } = await supabase.functions.invoke('admin-manual-confirm', {
           body: { order_id: orderId, reason: 'تأكيد يدوي من لوحة الأدمن', topup_request_id: r.id },
         });
-        if (error || !data?.ok) { toast.error(data?.reason ?? error?.message ?? 'فشل التأكيد'); return; }
+        if (error || !data?.ok) {
+          const errMsg = error?.context ? await (error.context as any).text?.().catch(() => error.message) : error?.message;
+          toast.error(data?.reason ?? errMsg ?? 'فشل التأكيد'); return;
+        }
         toast.success(`✅ تم التأكيد — ${r.credits_requested??1} Credit أُضيفت`);
         load();
       } finally { setProcessing(null); }
@@ -319,7 +322,10 @@ export default function AdminTopupRequestsPage() {
           body: { customer_id:r.customer_id, type:'credit', amount:credits,
             reason:`شحن يدوي - ${credits} credit - ${(r as any).sender_phone??''}` },
         });
-        if (error) { toast.error('فشل إضافة الرصيد: '+error.message); return; }
+        if (error) {
+          const errMsg = error?.context ? await (error.context as any).text?.().catch(() => error.message) : error?.message;
+          toast.error('فشل إضافة الرصيد: ' + errMsg); return;
+        }
         await supabase.from('wallet_topup_requests').update({
           status:'approved', processed_at: new Date().toISOString(),
           matched_automatically:false, notes:'موافقة يدوية من الأدمن',
@@ -363,7 +369,10 @@ export default function AdminTopupRequestsPage() {
       const { data, error } = await supabase.functions.invoke('admin-reopen-order', {
         body: { order_id:orderId, reason:'إعادة فتح يدوي من الأدمن' },
       });
-      if (error || !data?.ok) { toast.error(data?.reason ?? error?.message ?? 'فشلت إعادة الفتح'); return; }
+      if (error || !data?.ok) {
+        const errMsg = error?.context ? await (error.context as any).text?.().catch(() => error.message) : error?.message;
+        toast.error(data?.reason ?? errMsg ?? 'فشلت إعادة الفتح'); return;
+      }
       toast.success('✅ تم إعادة فتح الطلب وإرساله للجهاز');
       load();
     } finally { setProcessing(null); }
@@ -379,9 +388,10 @@ export default function AdminTopupRequestsPage() {
         body: { order_id:orderId, reason, notes: notes||undefined },
       });
       if (error || !data?.ok) {
+        const errMsg = error?.context ? await (error.context as any).text?.().catch(() => error.message) : error?.message;
         toast.error(data?.reason==='case_already_open'
           ? 'قضية مفتوحة بالفعل لهذا الطلب'
-          : data?.reason ?? error?.message ?? 'فشل فتح القضية');
+          : data?.reason ?? errMsg ?? 'فشل فتح القضية');
         return;
       }
       toast.success('✅ تم فتح القضية بنجاح');
