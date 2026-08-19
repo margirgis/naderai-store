@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, phone, full_name, role, wallet_balance, credits_balance, status, created_at, updated_at')
+        .select('id, email, phone, full_name, role, wallet_balance, status, created_at, updated_at')
         .eq('id', userId)
         .maybeSingle();
       if (error) console.error('[AuthContext] fetchProfile error:', error.message);
