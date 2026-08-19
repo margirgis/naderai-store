@@ -179,7 +179,7 @@ export default function AdminTopupRequestsPage() {
     setLoading(true);
     let q = supabase
       .from('wallet_topup_requests')
-      .select('*, profiles!customer_id(id, email, full_name, phone, wallet_balance, credits_balance)')
+      .select('*, profiles!customer_id(id, email, full_name, phone, wallet_balance)')
       .order('created_at', { ascending: false })
       .limit(200); // show full history
 
