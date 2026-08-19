@@ -51,7 +51,7 @@ export interface Order {
 
 export type WalletTxType = 'credit' | 'debit' | 'hold' | 'release';
 
-export type TopupRequestStatus = 'pending' | 'scanning' | 'approved' | 'rejected';
+export type TopupRequestStatus = 'pending' | 'scanning' | 'approved' | 'rejected' | 'confirmed' | 'failed' | 'expired' | 'reopened' | 'cancelled' | 'duplicate';
 export type ScanStatus = 'pending' | 'scanning' | 'verified' | 'approved' | 'rejected' | 'manual_review';
 
 export interface WalletTopupRequest {

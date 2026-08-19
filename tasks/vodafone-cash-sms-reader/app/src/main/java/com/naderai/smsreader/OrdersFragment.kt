@@ -47,18 +47,53 @@ class OrdersFragment : Fragment() {
 
         adapter = OrderAdapter(
             onConfirmManual = { order ->
-                if (order.taskId == null) {
-                    android.widget.Toast.makeText(requireContext(), "task_id غير متوفر — اضغط إعادة الفحص أولاً", android.widget.Toast.LENGTH_SHORT).show()
-                    return@OrderAdapter
-                }
                 val context = requireContext()
                 val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, android.content.Context.MODE_PRIVATE)
-                val webhookUrl = SupabaseConfig.getWebhookUrl(prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)) ?: ""
+                val supabaseUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+
+                // ── مسار جديد: admin-manual-confirm Edge Function ────────────────
+                val paymentOrderId = order.paymentOrderId
+                if (paymentOrderId != null) {
+                    android.widget.Toast.makeText(context, "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
+                    val adminSession = AdminSession.isLoggedIn(context)
+                    if (!adminSession) {
+                        android.widget.Toast.makeText(context, "يجب تسجيل دخول الأدمن أولاً", android.widget.Toast.LENGTH_LONG).show()
+                        return@OrderAdapter
+                    }
+                    val accessToken  = AdminSession.accessToken(context)  ?: ""
+                    val refreshToken = AdminSession.refreshToken(context) ?: ""
+                    val confirmUrl = SupabaseConfig.getAdminManualConfirmUrl(supabaseUrl) ?: ""
+                    WebhookSender.sendAdminJson(
+                        url = confirmUrl,
+                        body = mapOf(
+                            "order_id"          to paymentOrderId,
+                            "topup_request_id"  to (order.requestId),
+                            "reason"            to "تأكيد يدوي من الجهاز",
+                            "access_token"      to accessToken,
+                            "refresh_token"     to refreshToken
+                        )
+                    ) { success, message, _ ->
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                            if (success) {
+                                AppState.updateOrderStatus(order.requestId, OrderStatus.COMPLETED)
+                                android.widget.Toast.makeText(context, "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                android.widget.Toast.makeText(context, "فشل التأكيد: $message", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        Unit
+                    }
+                    return@OrderAdapter
+                }
+
+                // ── مسار قديم (fallback): wallet-auto-confirm عبر task result ────
+                if (order.taskId == null) {
+                    android.widget.Toast.makeText(context, "task_id غير متوفر — اضغط إعادة الفحص أولاً", android.widget.Toast.LENGTH_SHORT).show()
+                    return@OrderAdapter
+                }
+                val webhookUrl = SupabaseConfig.getWebhookUrl(supabaseUrl) ?: ""
                 val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
-
                 android.widget.Toast.makeText(context, "جاري التأكيد اليدوي…", android.widget.Toast.LENGTH_SHORT).show()
-
-                // senderPhoneRequested هو رقم محفظة المُحوِّل — يختلف تماماً عن customerPhone
                 val manualTask = TaskScanner.Task(
                     taskId = order.taskId,
                     requestId = order.requestId,
@@ -76,7 +111,6 @@ class OrdersFragment : Fragment() {
                     paymentOrderId = order.paymentOrderId,
                     orderExpiresAt = order.orderExpiresAt
                 )
-
                 val now = System.currentTimeMillis()
                 val manualMessage = TaskScanner.ScannedMessage(
                     sender = "manual_confirm",
@@ -92,7 +126,6 @@ class OrdersFragment : Fragment() {
                     receiverWallet = null
                 )
                 val result = TaskScanner.ScanResult.Success(manualMessage)
-
                 TaskScanner.sendTaskResult(
                     context = context,
                     task = manualTask,
@@ -106,7 +139,7 @@ class OrdersFragment : Fragment() {
                                 AppState.updateOrderStatus(order.requestId, OrderStatus.COMPLETED)
                                 android.widget.Toast.makeText(context, "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
                             } else {
-                                android.widget.Toast.makeText(context, "فشل التأكيد — تحقق من اتصال الإنترنت أو جلسة الأدمن", android.widget.Toast.LENGTH_LONG).show()
+                                android.widget.Toast.makeText(context, "فشل التأكيد — تحقق من الاتصال أو جلسة الأدمن", android.widget.Toast.LENGTH_LONG).show()
                             }
                         }
                         Unit

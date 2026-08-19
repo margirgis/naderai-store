@@ -98,6 +98,7 @@ class OrderAdapter(
                 OrderStatus.AMOUNT_MISMATCH -> "المبلغ المُحوَّل لا يطابق المطلوب"
                 OrderStatus.FAILED -> order.failureReason ?: "فشل الفحص — تواصل مع الدعم"
                 OrderStatus.EXPIRED -> "انتهت صلاحية الطلب"
+                OrderStatus.ADMIN_OFFLINE -> "جهاز التأكيد غير متصل — سيُعالج الطلب لاحقاً"
                 else -> null
             }
             if (userFriendlyReason != null) {
@@ -117,10 +118,14 @@ class OrderAdapter(
             }
 
             // حالة الفحص + عداد المحاولات
-            if (order.status in setOf(OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.PENDING, OrderStatus.MANUAL_REVIEW)) {
+            if (order.status in setOf(OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.PENDING,
+                    OrderStatus.MANUAL_REVIEW, OrderStatus.WAITING_FOR_VERIFICATION, OrderStatus.REOPENED)) {
                 binding.orderScanProgress.visibility = View.VISIBLE
                 val remaining = order.maxAttempts - order.scanAttempt
                 val attemptText = when {
+                    order.status == OrderStatus.ADMIN_OFFLINE -> "📵 الجهاز غير متصل — سيُفحص عند الاتصال"
+                    order.status == OrderStatus.REOPENED -> "🔓 أُعيد فتحه — ينتظر إرساله للجهاز"
+                    order.status == OrderStatus.WAITING_FOR_VERIFICATION -> "⏳ ينتظر الجهاز…"
                     order.status == OrderStatus.MANUAL_REVIEW -> "⚠ يحتاج مراجعة يدوية"
                     order.status == OrderStatus.EXPIRED -> "انتهت صلاحية الطلب"
                     order.scanAttempt > 0 -> "محاولة الفحص: ${order.scanAttempt}/${order.maxAttempts} (متبقي $remaining)"
@@ -137,7 +142,8 @@ class OrderAdapter(
             // أزرار الإجراءات
             val showActions = order.status in setOf(
                 OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.MANUAL_REVIEW,
-                OrderStatus.AMOUNT_MISMATCH, OrderStatus.NOT_FOUND, OrderStatus.FAILED
+                OrderStatus.AMOUNT_MISMATCH, OrderStatus.NOT_FOUND, OrderStatus.FAILED,
+                OrderStatus.ADMIN_OFFLINE, OrderStatus.WAITING_FOR_VERIFICATION, OrderStatus.REOPENED
             )
             binding.actionDivider.visibility = if (showActions) View.VISIBLE else View.GONE
             binding.actionButtons.visibility = if (showActions) View.VISIBLE else View.GONE
@@ -167,6 +173,10 @@ class OrderAdapter(
             OrderStatus.FAILED -> "🚫"
             OrderStatus.DUPLICATE -> "🔁"
             OrderStatus.EXPIRED -> "⌛"
+            // v2 lifecycle statuses
+            OrderStatus.ADMIN_OFFLINE -> "📵"
+            OrderStatus.WAITING_FOR_VERIFICATION -> "⏳"
+            OrderStatus.REOPENED -> "🔓"
         }
     }
 

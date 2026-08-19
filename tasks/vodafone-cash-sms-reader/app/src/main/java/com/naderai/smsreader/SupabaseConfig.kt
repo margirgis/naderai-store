@@ -12,6 +12,9 @@ object SupabaseConfig {
     private const val ADMIN_LOGIN_PATH = "/functions/v1/admin-login"
     private const val ADMIN_ORDERS_PATH = "/functions/v1/admin-orders"
     private const val ADMIN_TASK_RESULT_PATH = "/functions/v1/admin-task-result"
+    private const val ADMIN_MANUAL_CONFIRM_PATH = "/functions/v1/admin-manual-confirm"
+    private const val ADMIN_REOPEN_ORDER_PATH   = "/functions/v1/admin-reopen-order"
+    private const val ADMIN_OPEN_CASE_PATH      = "/functions/v1/admin-open-case"
 
     /** يقبل رابط Supabase الاساسي ويرجع رابط الـ Edge Function الكامل */
     fun getWebhookUrl(supabaseUrl: String?): String? = buildUrl(supabaseUrl, EDGE_FUNCTION_PATH)
@@ -24,6 +27,9 @@ object SupabaseConfig {
 
     /** رابط إرسال نتيجة فحص SMS من الأدمن دون الحاجة لـ Webhook Secret */
     fun getAdminTaskResultUrl(supabaseUrl: String?): String? = buildUrl(supabaseUrl, ADMIN_TASK_RESULT_PATH)
+    fun getAdminManualConfirmUrl(supabaseUrl: String?): String? = buildUrl(supabaseUrl, ADMIN_MANUAL_CONFIRM_PATH)
+    fun getAdminReopenOrderUrl(supabaseUrl: String?): String?   = buildUrl(supabaseUrl, ADMIN_REOPEN_ORDER_PATH)
+    fun getAdminOpenCaseUrl(supabaseUrl: String?): String?      = buildUrl(supabaseUrl, ADMIN_OPEN_CASE_PATH)
 
     /** رابط جلب كل الطلبات للأدمن (alias) */
     fun getAdminUrl(supabaseUrl: String?): String? = getAdminOrdersUrl(supabaseUrl)
@@ -35,3 +41,6 @@ object SupabaseConfig {
         return if (base.endsWith(path)) base else base.trimEnd('/').plus(path)
     }
 }
+
+// New Edge Function paths for order lifecycle v2
+// (added by migration 00048)

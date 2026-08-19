@@ -344,7 +344,10 @@ enum class OrderStatus(val label: String, val color: String) {
     NOT_FOUND("لم يتم العثور", "#6B7280"),
     FAILED("فشل", "#DC2626"),
     DUPLICATE("مكرر", "#8B5CF6"),
-    EXPIRED("انتهت الصلاحية", "#64748B");
+    EXPIRED("انتهت الصلاحية", "#64748B"),
+    ADMIN_OFFLINE("الجهاز غير متصل", "#F97316"),
+    WAITING_FOR_VERIFICATION("ينتظر الجهاز", "#FBBF24"),
+    REOPENED("أُعيد فتحه", "#8B5CF6");
 
     /** الحالات النهائية التي لا يُعاد فتحها بعدها */
     fun isTerminal(): Boolean = this in setOf(
@@ -368,6 +371,9 @@ enum class OrderStatus(val label: String, val color: String) {
             "not_found", "not-found" -> NOT_FOUND
             "failed", "rejected" -> FAILED
             "expired" -> EXPIRED
+            "reopened" -> REOPENED
+            "admin_offline", "admin-offline" -> ADMIN_OFFLINE
+            "waiting_for_verification", "waiting-for-verification" -> WAITING_FOR_VERIFICATION
             "duplicate" -> DUPLICATE
             else -> PENDING
         }
