@@ -8,8 +8,9 @@ import { routes } from './routes';
 import { useAuth } from '@/contexts/AuthContext';
 
 const Spinner = () => (
-  <div className="min-h-screen bg-background flex items-center justify-center">
-    <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+  <div className="min-h-screen bg-[hsl(222,47%,4%)] flex flex-col items-center justify-center gap-4">
+    <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+    <p className="text-slate-400 text-sm">جاري التحميل…</p>
   </div>
 );
 
@@ -63,8 +64,9 @@ function AppRoutes() {
 }
 
 const PageLoader = () => (
-  <div className="min-h-screen bg-background flex items-center justify-center">
-    <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+  <div className="min-h-screen bg-[hsl(222,47%,4%)] flex flex-col items-center justify-center gap-4">
+    <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+    <p className="text-slate-400 text-sm">جاري تحميل الصفحة…</p>
   </div>
 );
 

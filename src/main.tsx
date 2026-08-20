@@ -4,10 +4,14 @@ import App from "./App.tsx";
 import { AppWrapper } from "./components/common/PageMeta.tsx";
 import "./index.css";
 
-Sentry.init({
-  dsn: import.meta.env['VITE_SENTRY_DSN'] as string | undefined,
-  environment: import.meta.env.MODE,
-});
+// تهيئة Sentry فقط إذا كان الـ DSN موجوداً — لا نوقف التطبيق بسببه
+const sentryDsn = import.meta.env['VITE_SENTRY_DSN'] as string | undefined;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: import.meta.env.MODE,
+  });
+}
 
 const ErrorFallback = () => (
   <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a', color:'#f8fafc', fontFamily:'sans-serif', gap:'16px' }}>

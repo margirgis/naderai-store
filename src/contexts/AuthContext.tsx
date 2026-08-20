@@ -28,22 +28,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  // Prevent stale profile overwriting a newer fetch
   const fetchSeqRef = useRef(0);
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ضمان setLoading(false) بعد 5 ثواني على أقصى تقدير — حماية من الانتظار اللانهائي
+  const ensureLoadingReleased = () => {
+    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    loadingTimerRef.current = setTimeout(() => {
+      setLoading((prev) => {
+        if (prev) console.warn('[AuthContext] loading timeout — force releasing');
+        return false;
+      });
+    }, 5000);
+  };
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     const seq = ++fetchSeqRef.current;
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, phone, full_name, role, wallet_balance, status, created_at, updated_at')
-        .eq('id', userId)
-        .maybeSingle();
+      const { data, error } = await Promise.race([
+        supabase
+          .from('profiles')
+          .select('id, email, phone, full_name, role, wallet_balance, status, created_at, updated_at')
+          .eq('id', userId)
+          .maybeSingle(),
+        new Promise<{ data: null; error: { message: string } }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 6000)
+        ),
+      ]);
       if (error) console.error('[AuthContext] fetchProfile error:', error.message);
-      // Only apply if this is still the latest fetch
       if (seq === fetchSeqRef.current) {
-        setProfile(data ?? null);
-        return data ?? null;
+        setProfile((data as Profile | null) ?? null);
+        return (data as Profile | null) ?? null;
       }
     } catch (e) {
       console.error('[AuthContext] fetchProfile exception:', e);
@@ -57,43 +72,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    ensureLoadingReleased();
 
-    // Initial session check — always setLoading(false) via finally, even on network error
-    supabase.auth.getSession()
+    // فحص الجلسة الأولية مع timeout 8 ثواني — يمنع الانتظار اللانهائي
+    Promise.race([
+      supabase.auth.getSession(),
+      new Promise<{ data: { session: null }; error: null }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null }, error: null }), 8000)
+      ),
+    ])
       .then(async ({ data: { session: s } }) => {
         if (!mounted) return;
         setSession(s);
         setUser(s?.user ?? null);
         if (s?.user) {
-          await fetchProfile(s.user.id).catch((e) =>
+          await fetchProfile(s.user.id).catch((e: unknown) =>
             console.error('[AuthContext] fetchProfile failed:', e)
           );
         }
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         console.error('[AuthContext] getSession failed:', e);
       })
       .finally(() => {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+        }
       });
 
-    // Auth state changes (login / logout / token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, s) => {
       if (!mounted) return;
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        await fetchProfile(s.user.id).catch((e) =>
+        await fetchProfile(s.user.id).catch((e: unknown) =>
           console.error('[AuthContext] fetchProfile on auth change failed:', e)
         );
       } else {
         setProfile(null);
       }
+      setLoading(false);
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     };
   }, []);
 
