@@ -106,14 +106,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        // انتظر fetchProfile قبل إيقاف loading — يمنع عرض واجهة المستخدم قبل معرفة دور الحساب
         await fetchProfile(s.user.id).catch((e: unknown) =>
           console.error('[AuthContext] fetchProfile on auth change failed:', e)
         );
       } else {
         setProfile(null);
       }
-      setLoading(false);
-      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+      // أوقف loading فقط بعد اكتمال fetchProfile
+      if (mounted) {
+        setLoading(false);
+        if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+      }
     });
 
     return () => {

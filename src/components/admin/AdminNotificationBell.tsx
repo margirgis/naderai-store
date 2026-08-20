@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,27 +19,41 @@ interface AdminNotification {
 }
 
 const EVENT_ICON: Record<string, string> = {
-  device_registered:   '📱',
-  test_ping_success:   '🧪',
-  test_responded:      '✅',
-  order_dispatched:    '📋',
-  scan_success:        '✅',
-  scan_not_found:      '❓',
-  scan_failure:        '❌',
-  scan_amount_mismatch:'⚠️',
-  scan_duplicate:      '🔁',
-  info:                '🔔',
+  device_registered:    '📱',
+  test_ping_success:    '🧪',
+  test_responded:       '✅',
+  order_dispatched:     '📋',
+  scan_success:         '✅',
+  scan_not_found:       '❓',
+  scan_failure:         '❌',
+  scan_amount_mismatch: '⚠️',
+  scan_duplicate:       '🔁',
+  info:                 '🔔',
 };
+
+/** تحديد مسار التفاصيل بناءً على نوع الحدث والمرجع */
+function resolveNotifPath(n: AdminNotification): string | null {
+  const { event_type, reference_id, device_id } = n;
+  if (event_type === 'order_dispatched' || event_type === 'scan_success' ||
+      event_type === 'scan_not_found' || event_type === 'scan_failure' ||
+      event_type === 'scan_amount_mismatch' || event_type === 'scan_duplicate') {
+    return reference_id ? `/orders/${reference_id}` : '/orders';
+  }
+  if (event_type === 'device_registered' || event_type === 'test_ping_success' || event_type === 'test_responded') {
+    return device_id ? `/devices/${device_id}` : '/devices';
+  }
+  return null;
+}
 
 export function AdminNotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   const unread = notifications.filter((n) => !n.is_read).length;
 
-  // Initial load
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase
@@ -50,7 +65,6 @@ export function AdminNotificationBell() {
     };
     load();
 
-    // Realtime subscription — unique topic per mount avoids collision with any lingering channel
     const channelName = `admin-notifications-bell-${crypto.randomUUID()}`;
     const channel = supabase
       .channel(channelName)
@@ -66,7 +80,6 @@ export function AdminNotificationBell() {
     };
   }, []);
 
-  // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
@@ -75,13 +88,26 @@ export function AdminNotificationBell() {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  const markRead = async (id: string) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+  };
+
   const markAllRead = async () => {
     await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
   };
 
-  const dismiss = (id: string) => {
+  const dismiss = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const handleClick = async (n: AdminNotification) => {
+    await markRead(n.id);
+    setOpen(false);
+    const path = resolveNotifPath(n);
+    if (path) navigate(path);
   };
 
   return (
@@ -103,7 +129,6 @@ export function AdminNotificationBell() {
 
       {open && (
         <div className="absolute left-0 top-full mt-2 w-80 md:w-96 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
-          {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <span className="text-sm font-semibold">الإشعارات {unread > 0 && `(${unread} جديد)`}</span>
             {unread > 0 && (
@@ -113,37 +138,45 @@ export function AdminNotificationBell() {
             )}
           </div>
 
-          {/* List */}
           <div className="overflow-y-auto max-h-[400px]">
             {notifications.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground py-8">لا توجد إشعارات</p>
             ) : (
-              notifications.map((n) => (
-                <div
-                  key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 border-b border-border/50 last:border-0 transition-colors ${
-                    !n.is_read ? 'bg-primary/5' : 'hover:bg-muted/40'
-                  }`}
-                >
-                  <span className="text-lg shrink-0 mt-0.5">
-                    {EVENT_ICON[n.event_type] ?? '🔔'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{n.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{n.message}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ar })}
-                    </p>
-                  </div>
-                  <button
-                    className="shrink-0 text-muted-foreground hover:text-foreground mt-0.5"
-                    onClick={() => dismiss(n.id)}
-                    aria-label="إغلاق"
+              notifications.map((n) => {
+                const hasLink = resolveNotifPath(n) !== null;
+                return (
+                  <div
+                    key={n.id}
+                    onClick={() => handleClick(n)}
+                    className={[
+                      'flex items-start gap-3 px-4 py-3 border-b border-border/50 last:border-0 transition-colors',
+                      !n.is_read ? 'bg-primary/5' : 'hover:bg-muted/40',
+                      hasLink ? 'cursor-pointer' : 'cursor-default',
+                    ].join(' ')}
                   >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))
+                    <span className="text-lg shrink-0 mt-0.5">
+                      {EVENT_ICON[n.event_type] ?? '🔔'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{n.title}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
+                      {hasLink && (
+                        <p className="text-[10px] text-primary mt-0.5">اضغط لعرض التفاصيل ←</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ar })}
+                      </p>
+                    </div>
+                    <button
+                      className="shrink-0 text-muted-foreground hover:text-foreground mt-0.5"
+                      onClick={(e) => dismiss(e, n.id)}
+                      aria-label="إغلاق"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -151,3 +184,4 @@ export function AdminNotificationBell() {
     </div>
   );
 }
+

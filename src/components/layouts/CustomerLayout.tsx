@@ -144,12 +144,12 @@ function NotificationBell() {
 
 /* ── Nav items ─────────────────────────────────────────────────────────── */
 const navItems = [
-  { label: 'الرئيسية', path: '/store', icon: Home },
-  { label: 'الخدمات', path: '/store/services', icon: ShoppingBag },
-  { label: 'طلباتي', path: '/store/orders', icon: ClipboardList },
-  { label: 'محفظتي', path: '/store/wallet', icon: Wallet },
-  { label: 'إكمال الدفع', path: '/store/wallet/payment-pending', icon: CreditCard },
-  { label: 'حسابي', path: '/store/profile', icon: User },
+  { label: 'الرئيسية', path: '/store', icon: Home, exact: true },
+  { label: 'الخدمات', path: '/store/services', icon: ShoppingBag, exact: false },
+  { label: 'طلباتي', path: '/store/orders', icon: ClipboardList, exact: false },
+  { label: 'محفظتي', path: '/store/wallet', icon: Wallet, exact: true },
+  { label: 'إكمال الدفع', path: '/store/wallet/payment-pending', icon: CreditCard, exact: false },
+  { label: 'حسابي', path: '/store/profile', icon: User, exact: false },
 ];
 
 /* ── Sidebar NavContent ────────────────────────────────────────────────── */
@@ -184,9 +184,10 @@ function NavContent({ onClose }: { onClose?: () => void }) {
       </div>
 
       <nav className="flex-1 px-2 py-3 space-y-0.5">
-        {navItems.map(({ label, path, icon: Icon }) => {
-          const active = location.pathname === path ||
-            (path !== '/store' && location.pathname.startsWith(path));
+        {navItems.map(({ label, path, icon: Icon, exact }) => {
+          const active = exact
+            ? location.pathname === path
+            : location.pathname === path || location.pathname.startsWith(path + '/');
           return (
             <Link key={path} to={path} onClick={onClose}
               className={cn(
@@ -274,9 +275,10 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
           dir="rtl"
           aria-label="التنقل السفلي"
         >
-          {navItems.map(({ label, path, icon: Icon }) => {
-            const active = location.pathname === path ||
-              (path !== '/store' && location.pathname.startsWith(path));
+          {navItems.map(({ label, path, icon: Icon, exact }) => {
+            const active = exact
+              ? location.pathname === path
+              : location.pathname === path || location.pathname.startsWith(path + '/');
             return (
               <Link key={path} to={path}
                 className={cn(
