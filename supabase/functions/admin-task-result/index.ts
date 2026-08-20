@@ -81,6 +81,18 @@ Deno.serve(async (req: Request) => {
     is_active: true,
   }, { onConflict: 'device_id' });
 
+  // جلب payment_order_id من pending_tasks إذا لم يُرسله الجهاز
+  let paymentOrderId = payload.payment_order_id ?? null;
+  if (!paymentOrderId && payload.task_id) {
+    const { data: taskRow } = await db
+      .from('pending_tasks')
+      .select('payment_order_id')
+      .eq('id', payload.task_id)
+      .maybeSingle();
+    paymentOrderId = taskRow?.payment_order_id ?? null;
+  }
+
+  // complete_device_task الآن يوجّه تلقائياً لـ confirm_payment_order عندما يجد payment_order_id
   const { data, error } = await db.rpc('complete_device_task', {
     p_task_id: payload.task_id,
     p_status: payload.status ?? 'failure',
