@@ -18,7 +18,7 @@ import java.util.Collections
 object TaskScanner {
 
     private const val TAG = "TaskScanner"
-    const val MAX_SCAN_ATTEMPTS = 3
+    const val MAX_SCAN_ATTEMPTS = 5
     private const val SCAN_INTERVAL_MS = 20_000L
 
     private val KEYWORDS = listOf(
