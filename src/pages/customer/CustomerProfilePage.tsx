@@ -45,6 +45,18 @@ export default function CustomerProfilePage() {
             <CardTitle className="text-sm font-semibold">بيانات الحساب</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {profile?.username && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">اسم المستخدم</p>
+                <p className="text-sm text-foreground font-medium font-mono" dir="ltr">@{profile.username}</p>
+              </div>
+            )}
+            {profile?.full_name && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">الاسم الكامل</p>
+                <p className="text-sm text-foreground font-medium">{profile.full_name}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs text-muted-foreground mb-1">البريد الإلكتروني</p>
               <p className="text-sm text-foreground font-medium">{user?.email ?? '—'}</p>

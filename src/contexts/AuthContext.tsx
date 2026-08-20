@@ -31,7 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchSeqRef = useRef(0);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ضمان setLoading(false) بعد 5 ثواني على أقصى تقدير — حماية من الانتظار اللانهائي
+  // ضمان setLoading(false) بعد 4 ثواني على أقصى تقدير — حماية من الانتظار اللانهائي
   const ensureLoadingReleased = () => {
     if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     loadingTimerRef.current = setTimeout(() => {
@@ -39,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (prev) console.warn('[AuthContext] loading timeout — force releasing');
         return false;
       });
-    }, 5000);
+    }, 4000);
   };
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
@@ -48,11 +48,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data, error } = await Promise.race([
         supabase
           .from('profiles')
-          .select('id, email, phone, full_name, role, wallet_balance, status, created_at, updated_at')
+          .select('id, email, phone, full_name, username, role, wallet_balance, status, created_at, updated_at')
           .eq('id', userId)
           .maybeSingle(),
         new Promise<{ data: null; error: { message: string } }>((resolve) =>
-          setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 6000)
+          setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 4000)
         ),
       ]);
       if (error) console.error('[AuthContext] fetchProfile error:', error.message);
@@ -74,11 +74,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let mounted = true;
     ensureLoadingReleased();
 
-    // فحص الجلسة الأولية مع timeout 8 ثواني — يمنع الانتظار اللانهائي
+    // فحص الجلسة الأولية مع timeout 4 ثواني — يمنع الانتظار اللانهائي
     Promise.race([
       supabase.auth.getSession(),
       new Promise<{ data: { session: null }; error: null }>((resolve) =>
-        setTimeout(() => resolve({ data: { session: null }, error: null }), 8000)
+        setTimeout(() => resolve({ data: { session: null }, error: null }), 4000)
       ),
     ])
       .then(async ({ data: { session: s } }) => {

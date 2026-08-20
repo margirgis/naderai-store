@@ -6,23 +6,37 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState(''); // بريد أو اسم مستخدم
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password) return;
+    if (!identifier.trim() || !password) return;
     setLoading(true);
     try {
+      let emailToUse = identifier.trim();
+
+      // إذا لم يكن بريداً إلكترونياً — ابحث عن الـ email عبر username
+      if (!emailToUse.includes('@')) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('username', emailToUse.toLowerCase())
+          .maybeSingle();
+        if (profileError || !profileData?.email) {
+          toast.error('اسم المستخدم غير موجود');
+          return;
+        }
+        emailToUse = profileData.email;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: emailToUse,
         password,
       });
       if (error) {
@@ -97,10 +111,10 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs text-muted-foreground tracking-wide">البريد الإلكتروني</Label>
-              <Input id="email" type="email" placeholder="example@email.com"
-                value={email} onChange={e => setEmail(e.target.value)}
-                autoComplete="email" required
+              <Label htmlFor="identifier" className="text-xs text-muted-foreground tracking-wide">البريد الإلكتروني أو اسم المستخدم</Label>
+              <Input id="identifier" type="text" placeholder="example@email.com أو اسم المستخدم"
+                value={identifier} onChange={e => setIdentifier(e.target.value)}
+                autoComplete="username" required
                 className="bg-card border-border text-foreground placeholder:text-muted-foreground" />
             </div>
 

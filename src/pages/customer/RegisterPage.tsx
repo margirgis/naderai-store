@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ name: '', username: '', email: '', password: '', confirm: '' });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -26,24 +26,44 @@ export default function RegisterPage() {
       toast.error('كلمة المرور يجب أن تكون 8 أحرف على الأقل');
       return;
     }
+    if (form.username.trim().length < 3) {
+      toast.error('اسم المستخدم يجب أن يكون 3 أحرف على الأقل');
+      return;
+    }
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
         email: form.email.trim(),
         password: form.password,
-        options: { data: { full_name: form.name.trim() } },
+        options: { data: { full_name: form.name.trim(), username: form.username.trim().toLowerCase() } },
       });
       if (error) { toast.error(error.message); return; }
       if (data.user) {
-        // Ensure profile row exists with role=user — يحفظ full_name أيضاً
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          email: form.email.trim(),
-          full_name: form.name.trim() || null,
-          role: 'user',
-          wallet_balance: 0,
-          status: 'active',
-        }, { onConflict: 'id' });
+        // إنشاء profile فقط إذا لم يكن موجوداً — لا نكتب على role الموجود أبداً
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from('profiles').insert({
+            id: data.user.id,
+            email: form.email.trim(),
+            full_name: form.name.trim() || null,
+            username: form.username.trim().toLowerCase(),
+            role: 'user',
+            wallet_balance: 0,
+            status: 'active',
+          });
+        } else if (!existing.role || existing.role === 'user') {
+          // فقط أحدّث البيانات غير الحساسة — لا نلمس role أبداً
+          await supabase.from('profiles').update({
+            email: form.email.trim(),
+            full_name: form.name.trim() || null,
+            username: form.username.trim().toLowerCase(),
+          }).eq('id', data.user.id);
+        }
         toast.success('تم إنشاء حسابك بنجاح! مرحباً بك');
         navigate('/store', { replace: true });
       }
@@ -65,9 +85,16 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="name" className="text-xs text-muted-foreground">الاسم</Label>
+            <Label htmlFor="name" className="text-xs text-muted-foreground">الاسم الكامل</Label>
             <Input id="name" placeholder="اسمك الكامل" value={form.name}
               onChange={update('name')} required className="bg-card border-border" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="username" className="text-xs text-muted-foreground">اسم المستخدم</Label>
+            <Input id="username" placeholder="مثال: ahmed99" value={form.username}
+              onChange={update('username')} required minLength={3}
+              className="bg-card border-border" dir="ltr" />
+            <p className="text-[11px] text-muted-foreground">لا يقبل مسافات، يُستخدم لتسجيل الدخول</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-xs text-muted-foreground">البريد الإلكتروني</Label>

@@ -4,6 +4,8 @@ export interface Profile {
   id: string;
   email: string | null;
   phone: string | null;
+  full_name: string | null;
+  username: string | null;
   role: UserRole;
   wallet_balance: number;
   status: 'active' | 'suspended' | 'banned';
