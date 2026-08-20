@@ -42,15 +42,13 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
       - name: Grant execute permission
-        run: chmod +x ./gradlew || true
+        run: chmod +x ./gradlew
 
       - name: Build & Sign Release APK
         run: |
-          gradle :app:assembleRelease \
+          ./gradlew :app:assembleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/signing/release.keystore \
             -Pandroid.injected.signing.store.password=naderai2024 \
             -Pandroid.injected.signing.key.alias=naderai \
