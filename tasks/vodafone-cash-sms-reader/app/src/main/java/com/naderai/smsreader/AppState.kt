@@ -312,12 +312,6 @@ object AppState {
         }
     }
 
-    private fun notifyOnce(requestId: String, status: OrderStatus, build: () -> DeviceNotification) {
-        if (notifiedFinalStatuses[requestId] == status) return
-        notifiedFinalStatuses[requestId] = status
-        addNotification(build())
-    }
-
     /**
      * يُستدعى بعد رد السيرفر على task_result — يحدد الحالة النهائية.
      * scan_status من السيرفر: "confirmed" → COMPLETED، "duplicate" → DUPLICATE،
