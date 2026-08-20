@@ -60,3 +60,4 @@ historical_context.txt
 /tasks/*
 !/tasks/vodafone-cash-sms-reader/
 !/tasks/naderai-app/
+/tasks
