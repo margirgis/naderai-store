@@ -92,6 +92,22 @@ class OrderSyncManager(
                 else -> null
             }
 
+            // وقت الفحص: scanned_at أو scanning_started_at
+            val scannedAtMillis: Long? = listOf("scanned_at", "scanning_started_at")
+                .firstNotNullOfOrNull { key ->
+                    obj.optString(key).takeIf { it.isNotEmpty() }
+                }?.let { iso ->
+                    try { java.time.Instant.parse(iso).toEpochMilli() } catch (e: Exception) { null }
+                }
+
+            // رقم العملية + بيانات المرسل المستخرجة
+            val txId = obj.optString("transaction_id").takeIf { it.isNotEmpty() && it != "null" }
+            val senderPhoneFound = obj.optString("sender_phone_found")
+                .takeIf { it.isNotEmpty() && it != "null" }
+            val senderNameFound = obj.optString("sender_name_found")
+                .takeIf { it.isNotEmpty() && it != "null" }
+                ?: obj.optString("sender_name").takeIf { it.isNotEmpty() && it != "null" }
+
             return OrderItem(
                 requestId = requestId,
                 orderLabel = "طلب #${orderNumber ?: requestId.take(8)}",
@@ -100,13 +116,16 @@ class OrderSyncManager(
                 createdAt = createdAt,
                 updatedAt = updatedAt,
                 failureReason = finalReason,
-                transactionId = obj.optString("transaction_id").takeIf { it.isNotEmpty() },
+                transactionId = txId,
+                scannedAt = scannedAtMillis,
+                senderPhoneFound = senderPhoneFound,
+                senderNameFound = senderNameFound,
                 orderNumber = orderNumber,
                 creditsRequested = obj.optInt("credits_requested", 0).takeIf { it > 0 },
                 customerEmail = obj.optString("customer_email").takeIf { it.isNotEmpty() },
                 customerPhone = obj.optString("customer_phone").takeIf { it.isNotEmpty() },
                 customerName = obj.optString("customer_name").takeIf { it.isNotEmpty() }
-                    ?: obj.optString("sender_name").takeIf { it.isNotEmpty() },
+                    ?: senderNameFound,
                 paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                 taskId = obj.optString("task_id").takeIf { it.isNotEmpty() },
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
