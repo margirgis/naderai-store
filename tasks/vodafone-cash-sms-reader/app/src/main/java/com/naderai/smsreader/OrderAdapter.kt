@@ -117,6 +117,15 @@ class OrderAdapter(
                 binding.orderTxId.visibility = View.GONE
             }
 
+            // عمر رسالة الـ SMS — يُظهر متى وصلت الرسالة التي تطابق الطلب
+            val smsAge = order.scannedAt?.let { formatSmsAge(it) }
+            if (smsAge != null && txText != null) {
+                binding.orderSmsAge.visibility = View.VISIBLE
+                binding.orderSmsAge.text = "⏱ الرسالة وصلت: $smsAge"
+            } else {
+                binding.orderSmsAge.visibility = View.GONE
+            }
+
             // حالة الفحص + عداد المحاولات
             if (order.status in setOf(OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.PENDING,
                     OrderStatus.MANUAL_REVIEW, OrderStatus.WAITING_FOR_VERIFICATION, OrderStatus.REOPENED)) {
@@ -187,4 +196,21 @@ class OrderAdapter(
 
     private fun formatTime(ts: Long): String =
         SimpleDateFormat("dd/MM hh:mm a", Locale("ar")).format(Date(ts))
+
+    /** يعرض متى وصلت رسالة الـ SMS بشكل نسبي ذكي */
+    private fun formatSmsAge(ts: Long): String {
+        val diffMs = System.currentTimeMillis() - ts
+        val diffSec  = diffMs / 1000
+        val diffMin  = diffSec / 60
+        val diffHour = diffMin / 60
+        val diffDay  = diffHour / 24
+        return when {
+            diffSec  < 60   -> "منذ أقل من دقيقة"
+            diffMin  < 60   -> "منذ $diffMin دقيقة"
+            diffHour < 24   -> "منذ $diffHour ساعة"
+            diffDay  == 1L  -> "منذ يوم واحد"
+            diffDay  < 7    -> "منذ $diffDay أيام"
+            else            -> SimpleDateFormat("dd/MM HH:mm", Locale("ar")).format(Date(ts))
+        }
+    }
 }

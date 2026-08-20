@@ -65,13 +65,27 @@ object AppState {
         for (order in newOrders) {
             val existing = currentMap[order.requestId]
             currentMap[order.requestId] = if (existing != null) {
-                // الحالة النهائية من السيرفر أو المحلية تُغلق الطلب
+                // ── قاعدة الدمج ──────────────────────────────────────────
+                // 1. السيرفر يعيد حالة terminal (DUPLICATE/COMPLETED/FAILED…) → تُطبَّق دائماً
+                // 2. الجهاز محلياً وصل لحالة terminal → تُحافظ عليها
+                // 3. السيرفر يعيد حالة أوضح من PENDING (مثلاً MANUAL_REVIEW/SCANNING من السيرفر) → تُطبَّق
+                // 4. الجهاز في منتصف فحص نشط (SCANNING) → لا تُقاطعه بـ PENDING من السيرفر
+                // 5. الجهاز يعرض MANUAL_REVIEW محلياً (مؤقتة) → يُطبَّق ما جاء من السيرفر إذا كان أوضح
+                val serverStatus = order.status
+                val localStatus  = existing.status
                 val mergedStatus = when {
-                    order.status.isTerminal() -> order.status
-                    existing.status.isTerminal() -> existing.status
-                    order.status == OrderStatus.PENDING && existing.status == OrderStatus.SCANNING -> existing.status
-                    order.status == OrderStatus.PENDING -> OrderStatus.PENDING
-                    else -> existing.status
+                    // 1. السيرفر يعيد قرار نهائي → دائماً يفوز (يحل مشكلة DUPLICATE يُتجاهل)
+                    serverStatus.isTerminal()                                  -> serverStatus
+                    // 2. الجهاز وصل لحالة نهائية ولم يرد السيرفر بعكسها → تُحافظ عليها
+                    localStatus.isTerminal()                                   -> localStatus
+                    // 3. الجهاز في فحص نشط → لا نُقاطعه بـ PENDING من السيرفر
+                    serverStatus == OrderStatus.PENDING && localStatus == OrderStatus.SCANNING -> localStatus
+                    // 4. الجهاز MANUAL_REVIEW (مؤقتة) والسيرفر يعيد حالة أوضح → السيرفر يفوز
+                    localStatus == OrderStatus.MANUAL_REVIEW && serverStatus != OrderStatus.PENDING -> serverStatus
+                    // 5. السيرفر يعيد PENDING → نبقي الحالة المحلية الأكثر تقدماً
+                    serverStatus == OrderStatus.PENDING                        -> localStatus
+                    // 6. باقي الحالات → ما جاء من السيرفر أحدث
+                    else                                                       -> serverStatus
                 }
                 existing.withSnapshotPreserved(order).copy(
                     status = mergedStatus,
