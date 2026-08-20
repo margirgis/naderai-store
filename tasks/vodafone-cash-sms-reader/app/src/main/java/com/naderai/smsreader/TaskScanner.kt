@@ -235,8 +235,8 @@ object TaskScanner {
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
 
         // حد أدنى للوقت: الـ SMS يجب أن يكون بعد إنشاء الطلب بحد أقصى 5 دقائق قبله
-        val SMS_BEFORE_ORDER_TOLERANCE_MS = 5L * 60 * 1000   // 5 دقائق
-        val SMS_MAX_AGE_MS               = 30L * 60 * 1000   // 30 دقيقة
+        val SMS_BEFORE_ORDER_TOLERANCE_MS = 5L * 60 * 1000     // 5 دقائق قبل إنشاء الطلب
+        val SMS_MAX_AGE_MS               = 24L * 60 * 60 * 1000 // 24 ساعة — رسائل اختبارية قديمة مقبولة
         val orderCreatedMs: Long? = task.requestCreatedAt?.let {
             runCatching {
                 java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
@@ -664,10 +664,16 @@ object TaskScanner {
         ) ?: return emptyList()
         cursor.use { c ->
             while (c.moveToNext()) {
+                val address = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: ""
                 val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
+                val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
+                // نفس شرط الـ sender الرسمي كما في مسار الطلب الحقيقي
+                if (!isOfficialVodafoneSender(address)) {
+                    Log.d(TAG, "[TestInbox] Skip non-Vodafone sender: $address")
+                    continue
+                }
                 if (SmsParser.isOfficialReceivedMessage(body)) {
                     val parsed = SmsParser.parseReceived(body)
-                    val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
                     results.add(parsed.copy(date = date))
                 }
             }

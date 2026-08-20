@@ -24,7 +24,7 @@ object SmsParser {
     private val OFFICIAL_VF_REGEX = Regex(
         """تم\s+استلام\s+مبلغ\s*([\d,]+\.?\d{0,2})\s*جنيه\s*من\s*(?:رقم\s*)?(\+?0?1[0-9]{9})""" +
         """(?:\s*[؛;.,]?\s*)""" +
-        """المسجل\s+باسم\s+""" +
+        """المسجل\s+(?:باسم|بإسم)\s+""" +  // يدعم كلا الصيغتين: "باسم" و"بإسم"
         """([\u0600-\u06FFA-Za-z][\u0600-\u06FFA-Za-z0-9 ]{0,60}?)""" +
         """\s+على\s+رقم\s+محفظتك\s*(\+?0?1[0-9]{9})""",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
