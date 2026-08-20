@@ -38,15 +38,20 @@ object SmsParser {
      * نرفض رسائل "تم تحويل" (الصادرة) بفحص البادئة فقط.
      */
     fun isOfficialReceivedMessage(body: String): Boolean {
-        val mandatory = listOf("فودافون", "Vodafone", "فودافون كاش", "Vodafone Cash")
-        val received = listOf("تم استلام", "استلام", "استلمت", "received")
+        val mandatory = listOf("فودافون", "Vodafone", "فودافون كاش", "Vodafone Cash", "محفظتك")
+        val received  = listOf("تم استلام", "استلام", "استلمت", "received")
         if (mandatory.none { body.contains(it, ignoreCase = true) }) return false
-        if (received.none { body.contains(it, ignoreCase = true) }) return false
+        if (received.none  { body.contains(it, ignoreCase = true) }) return false
 
-        // لا نعتمد على بادئة "تم تحويل" الصادرة — فقط في أول 20 حرف
+        // رفض رسائل الصادرة — فحص أول 20 حرف فقط
         val prefix = body.trimStart().take(20)
-        val outgoing = listOf("تم تحويل", "تحويل", "تم سحب", "سحب", "تم دفع", "دفع")
+        val outgoing = listOf("تم تحويل", "تحويل", "تم سحب", "سحب", "تم دفع", "دفع",
+                              "you have sent", "you transferred")
         if (outgoing.any { prefix.contains(it, ignoreCase = true) }) return false
+
+        // لازم يحتوي على نمط محفظة (رقم محفظتك) أو رقم العملية — دليل أنها رسمية
+        val hasWalletPattern = body.contains("محفظتك") || body.contains("رقم العملية")
+        if (!hasWalletPattern) return false
 
         return true
     }

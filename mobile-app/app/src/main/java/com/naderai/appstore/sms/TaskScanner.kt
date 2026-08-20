@@ -17,10 +17,12 @@ object TaskScanner {
 
     private val TAG = "TaskScanner"
 
-    private val VODAFONE_NUMBERS = setOf(
-        "VOD-CASH", "VodafoneCash", "Vodafone Cash",
-        "Vodafone", "01010", "01011", "2olo",
-        "VODAFONE", "vodafonecash"
+    // ── الشرط الذهبي: قائمة الأسماء والأرقام الرسمية لفودافون كاش مصر ──
+    // أي SMS من غيرهم = غير رسمي ويُرفض فوراً
+    private val OFFICIAL_SENDER_ADDRESSES = setOf(
+        "vodafone", "vodafonecash", "vf-cash", "vfcash",
+        "vf cash", "vc", "voda", "vodafone cash",
+        "2010", "2020", "2880", "16888", "888"
     )
 
     private val AMOUNT_PATTERNS = listOf(
@@ -83,9 +85,25 @@ object TaskScanner {
 
     fun isOfficialVodafoneCashMessage(body: String): Boolean {
         val lower = body.lowercase()
-        return lower.contains("vodafone") || lower.contains("فودافون") ||
-            lower.contains("voda") || lower.contains("تم استلام") ||
-            lower.contains("محفظة") || lower.contains("تحويل مبلغ")
+        // لازم يحتوي على "استلام" أو "received" — مش مجرد "فودافون"
+        val hasReceived = lower.contains("تم استلام") || lower.contains("استلام") ||
+                          lower.contains("استلمت") || lower.contains("received")
+        if (!hasReceived) return false
+        // لازم يحتوي على مؤشر فودافون في النص
+        val hasVF = lower.contains("vodafone") || lower.contains("فودافون") ||
+                    lower.contains("voda") || lower.contains("محفظتك")
+        if (!hasVF) return false
+        // رفض رسائل الصادرة بفحص البادئة
+        val prefix = body.trimStart().take(20).lowercase()
+        val outgoing = listOf("تم تحويل", "تم سحب", "قمت بتحويل", "you have sent", "you transferred")
+        if (outgoing.any { prefix.contains(it) }) return false
+        return true
+    }
+
+    /** يتحقق أن الـ ADDRESS هو فودافون الرسمي — الحاجز الأساسي قبل قراءة النص */
+    fun isOfficialVodafoneSender(smsAddress: String): Boolean {
+        val lower = smsAddress.trim().lowercase()
+        return OFFICIAL_SENDER_ADDRESSES.any { lower.contains(it) }
     }
 
     fun testParseSms(body: String): ParsedSms = parseSms(body)
@@ -105,7 +123,9 @@ object TaskScanner {
                 while (c.moveToNext()) {
                     val body = c.getString(bodyIdx) ?: continue
                     val addr = c.getString(addrIdx) ?: ""
-                    if (isRelevantSender(addr) || isOfficialVodafoneCashMessage(body)) {
+                    // ── SECURITY: فحص الـ ADDRESS أولاً — لازم من فودافون الرسمي ──
+                    if (!isOfficialVodafoneSender(addr)) continue
+                    if (isOfficialVodafoneCashMessage(body)) {
                         val parsed = parseSms(body)
                         if (parsed.amount != null) results.add(parsed)
                     }
@@ -232,6 +252,6 @@ object TaskScanner {
 
     private fun isRelevantSender(address: String): Boolean {
         val lower = address.lowercase()
-        return VODAFONE_NUMBERS.any { lower.contains(it.lowercase()) }
+        return OFFICIAL_SENDER_ADDRESSES.any { lower.contains(it) }
     }
 }

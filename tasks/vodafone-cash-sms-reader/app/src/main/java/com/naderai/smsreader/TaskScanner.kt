@@ -26,22 +26,16 @@ object TaskScanner {
         "تم استلام", "received egp", "you have received", "تحويل", "مبلغ"
     )
 
-    // الشروط اللازمة لاعتبار الرسالة رسالة فودافون كاش رسمية
-    // الرسالة لازم تحتوي على مؤشر فودافون + إنها رسالة "استلام" (مش "تحويل" صادر)
-    private val MANDATORY_KEYWORDS = listOf(
-        "فودافون",
-        "vodafone",
-        "vfcash"
+    // ── الشرط الذهبي: الـ ADDRESS (اسم/رقم المُرسِل كما يظهر في صندوق الرسائل) ──
+    // فودافون كاش الرسمي دائماً يُرسِل من أحد هذه الأسماء أو الأرقام
+    // أي رسالة من شماره عادية أو اسم غير معروف = غير رسمية
+    val OFFICIAL_SENDER_ADDRESSES = setOf(
+        "vodafone", "vodafonecash", "vf-cash", "vfcash",
+        "vf cash", "vc", "voda", "vodafone cash",
+        "2010", "2020", "2880", "16888", "888"   // أرقام الخدمة الرسمية لفودافون مصر
     )
-    private val RECEIVED_KEYWORDS = listOf(
-        "تم استلام",
-        "استلام",
-        "استلمت",
-        "لقد استلمت"
-    )
+
     // الكلمات التي تدل على رسالة صادرة (ليست استلام) — نطابقها في بداية الرسالة فقط
-    // "تحويل" وحدها ليست كافية لأنها تظهر في رسائل الاستلام الرسمية من فودافون كاش
-    // مثال رسالة رسمية: "تم استلام مبلغ 5.94 جنيه من ... على رقم محفظتك ..."
     private val OUTGOING_KEYWORDS = listOf(
         "تم تحويل",
         "تم سحب",
@@ -49,6 +43,12 @@ object TaskScanner {
         "you have sent",
         "you transferred"
     )
+
+    /** يتحقق أن الـ ADDRESS هو فودافون الرسمي — الحاجز الأساسي */
+    fun isOfficialVodafoneSender(smsAddress: String): Boolean {
+        val lower = smsAddress.trim().lowercase()
+        return OFFICIAL_SENDER_ADDRESSES.any { lower.contains(it) }
+    }
 
     /** حماية من تشغيل أكثر من Scanner على نفس المهمة في نفس الوقت */
     private val activeScanJobs = Collections.synchronizedSet(mutableSetOf<String>())
@@ -234,12 +234,44 @@ object TaskScanner {
             Telephony.Sms.DATE + " DESC"
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
 
+        // حد أدنى للوقت: الـ SMS يجب أن يكون بعد إنشاء الطلب بحد أقصى 5 دقائق قبله
+        val SMS_BEFORE_ORDER_TOLERANCE_MS = 5L * 60 * 1000   // 5 دقائق
+        val SMS_MAX_AGE_MS               = 30L * 60 * 1000   // 30 دقيقة
+        val orderCreatedMs: Long? = task.requestCreatedAt?.let {
+            runCatching {
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                    .parse(it.take(19))?.time
+            }.getOrNull()
+        }
+
         val candidates = mutableListOf<ScannedMessage>()
         cursor.use { c ->
             while (c.moveToNext()) {
                 val sender = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "unknown"
                 val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
                 val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
+
+                // ── SECURITY: فحص الـ ADDRESS أولاً قبل قراءة النص ──
+                // الرسالة لازم تيجي من شماره/اسم فودافون الرسمي
+                if (!isOfficialVodafoneSender(sender)) {
+                    Log.d(TAG, "Skip SMS from non-Vodafone sender: $sender")
+                    continue
+                }
+
+                // ── SECURITY: time window — الـ SMS لازم يكون بعد إنشاء الطلب (أو قبله بـ 5 دقائق فقط) ──
+                if (orderCreatedMs != null) {
+                    val smsTooOld = date < (orderCreatedMs - SMS_BEFORE_ORDER_TOLERANCE_MS)
+                    val smsExpired = date < (System.currentTimeMillis() - SMS_MAX_AGE_MS)
+                    if (smsTooOld) {
+                        Log.d(TAG, "Skip SMS: too old (sms=${date} orderCreated=${orderCreatedMs})")
+                        continue
+                    }
+                    if (smsExpired) {
+                        Log.d(TAG, "Skip SMS: expired (age > 30min)")
+                        continue
+                    }
+                }
 
                 if (SmsParser.isOfficialReceivedMessage(body)) {
                     val parsed = SmsParser.parseReceived(body)
@@ -282,20 +314,24 @@ object TaskScanner {
             }
         }
 
-        // أفضل تطابق: phone + amount معاً (score 4)
+        // أفضل تطابق: phone + amount معاً (score 4) — هذا هو الوحيد المقبول
         val best = candidates.maxByOrNull { it.score }
         if (best != null && best.amountMatch && best.phoneMatch) {
             return ScanResult.Success(best)
         }
 
-        // ── المبدأ: الجهاز يبلّغ عن أفضل SMS وجده — السيرفر هو من يقرر القبول أو الرفض ──
-        // لو وجد SMS برقم مُحوِّل صحيح لكن مبلغ مختلف → نبعث success مع البيانات الكاملة
-        // السيرفر سيقارن المبلغ ويرجع amount_mismatch أو manual_review حسب منطقه
-        val phoneOnlyMatch = candidates.filter { it.phoneMatch }
+        // ── SECURITY: phoneOnly match (مبلغ مختلف) → amount_mismatch لا success ──
+        // السماح بإرسال success بدون تطابق المبلغ يُسبب manual_review لكل عملية مختلفة
+        // وقد يُستغل لتمرير عمليات بمبالغ غير صحيحة عبر المراجعة اليدوية
+        val phoneOnlyMatch = candidates.filter { it.phoneMatch && !it.amountMatch }
         if (phoneOnlyMatch.isNotEmpty()) {
             val closest = phoneOnlyMatch.maxByOrNull { it.score }!!
-            Log.d(TAG, "Phone match found (amount differs): phone=${closest.senderPhone} found=${closest.amount} expected=${task.fingerprintAmount ?: task.amountRequested} tx=${closest.transactionId} — sending to server for decision")
-            return ScanResult.Success(closest)
+            Log.d(TAG, "Phone match found but amount differs: phone=${closest.senderPhone} found=${closest.amount} expected=${task.fingerprintAmount ?: task.amountRequested} tx=${closest.transactionId} — returning AmountMismatch")
+            return ScanResult.AmountMismatch(
+                message = closest,
+                foundAmount = closest.amount ?: 0.0,
+                expectedAmount = task.fingerprintAmount ?: task.amountRequested
+            )
         }
 
         if (candidates.isEmpty()) {
