@@ -234,9 +234,10 @@ object TaskScanner {
             Telephony.Sms.DATE + " DESC"
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
 
-        // حد أدنى للوقت: الـ SMS يجب أن يكون بعد إنشاء الطلب بحد أقصى 5 دقائق قبله
-        val SMS_BEFORE_ORDER_TOLERANCE_MS = 5L * 60 * 1000     // 5 دقائق قبل إنشاء الطلب
-        val SMS_MAX_AGE_MS               = 24L * 60 * 60 * 1000 // 24 ساعة — رسائل اختبارية قديمة مقبولة
+        // نافذة زمنية: نقبل رسائل عمرها حتى 7 أيام
+        // smsTooOld أُزيل: المستخدم قد يدفع قبل إنشاء الطلب بأيام (حالة مشروعة)
+        // الحماية من إعادة الاستخدام تعتمد على transaction_id في السيرفر وليس على التاريخ
+        val SMS_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000 // 7 أيام
         val orderCreatedMs: Long? = task.requestCreatedAt?.let {
             runCatching {
                 java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
@@ -259,18 +260,12 @@ object TaskScanner {
                     continue
                 }
 
-                // ── SECURITY: time window — الـ SMS لازم يكون بعد إنشاء الطلب (أو قبله بـ 5 دقائق فقط) ──
-                if (orderCreatedMs != null) {
-                    val smsTooOld = date < (orderCreatedMs - SMS_BEFORE_ORDER_TOLERANCE_MS)
-                    val smsExpired = date < (System.currentTimeMillis() - SMS_MAX_AGE_MS)
-                    if (smsTooOld) {
-                        Log.d(TAG, "Skip SMS: too old (sms=${date} orderCreated=${orderCreatedMs})")
-                        continue
-                    }
-                    if (smsExpired) {
-                        Log.d(TAG, "Skip SMS: expired (age > 30min)")
-                        continue
-                    }
+                // ── time window: رفض رسائل أقدم من 7 أيام فقط ──
+                // لا يوجد شرط smsTooOld لأن المستخدم قد يدفع قبل الطلب بأيام
+                val smsExpired = date < (System.currentTimeMillis() - SMS_MAX_AGE_MS)
+                if (smsExpired) {
+                    Log.d(TAG, "Skip SMS: expired (age > 7 days, sms=$date)")
+                    continue
                 }
 
                 if (SmsParser.isOfficialReceivedMessage(body)) {
