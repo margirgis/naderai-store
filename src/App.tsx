@@ -32,7 +32,11 @@ function CustomerRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { session, isAdmin } = useAuth();
+  const { session, loading, isAdmin } = useAuth();
+
+  // لا تُعيد توجيهاً حتى يكتمل تحميل profile — يمنع إرسال الأدمن لـ /store
+  if (loading) return <Spinner />;
+
   return (
     <Routes>
       {routes.map((route, index) => {
@@ -44,12 +48,11 @@ function AppRoutes() {
         } else if (route.access === 'customer') {
           element = <CustomerRoute>{route.element}</CustomerRoute>;
         } else {
-          // legacy fallback: admin only
           element = <AdminRoute>{route.element}</AdminRoute>;
         }
         return <Route key={index} path={route.path} element={element} />;
       })}
-      {/* Fallback redirect */}
+      {/* Fallback redirect — ينتفذ بعد تحميل profile فنعرف الدور الحقيقي */}
       <Route
         path="*"
         element={
