@@ -27,6 +27,31 @@ object AppState {
     // Orders list
     val orders = MutableLiveData<List<OrderItem>>(emptyList())
 
+    // Context للحفظ الدائم للإشعارات
+    private var appContext: android.content.Context? = null
+
+    /**
+     * يُستدعى مرة واحدة من Application.onCreate لتهيئة التخزين الدائم.
+     * يُحمّل الإشعارات والـ sets المحفوظة من SharedPreferences.
+     */
+    fun initNotifications(ctx: android.content.Context) {
+        if (appContext != null) return
+        appContext = ctx.applicationContext
+        // تحميل notifiedTaskIds المحفوظة
+        val savedIds = NotificationStorage.loadNotifiedTaskIds(ctx)
+        notifiedTaskIds.addAll(savedIds)
+        // تحميل notifiedFinalStatuses المحفوظة
+        val savedStatuses = NotificationStorage.loadNotifiedFinalStatuses(ctx)
+        notifiedFinalStatuses.putAll(savedStatuses)
+        // تحميل الإشعارات المحفوظة
+        val saved = NotificationStorage.loadNotifications(ctx)
+        if (saved.isNotEmpty()) {
+            notifications.postValue(saved)
+            unreadNotificationCount.postValue(saved.count { !it.isRead })
+            android.util.Log.d("AppState", "Loaded ${saved.size} notifications from storage")
+        }
+    }
+
     /**
      * يدمج قائمة طلبات جديدة من السيرفر مع الطلبات المحلية.
      * - لا يحذف الطلبات القديمة.
@@ -84,8 +109,23 @@ object AppState {
         refreshCounts(ordersList)
     }
 
-    // Pending tasks from heartbeat
     val pendingTasks = MutableLiveData<List<TaskScanner.Task>>(emptyList())
+
+    /** يُصفَّر badge الفحص بعد انتهاء كل المهام */
+    fun clearPendingTasksIfDone() {
+        val current = pendingTasks.value ?: return
+        if (current.isEmpty()) return
+        // تحقق إذا كل الطلبات المرتبطة بالمهام وصلت لحالة نهائية
+        val activeOrders = getOrders()
+        val allDone = current.all { task ->
+            val order = activeOrders.firstOrNull { it.requestId == task.requestId }
+            order == null || order.status.isTerminal() ||
+                order.status !in setOf(OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING)
+        }
+        if (allDone) {
+            pendingTasks.postValue(emptyList())
+        }
+    }
 
     // Notifications
     val notifications = MutableLiveData<List<DeviceNotification>>(emptyList())
@@ -124,6 +164,7 @@ object AppState {
         if (refId != null && notification.type == NotificationType.ORDER_NEW) {
             if (notifiedTaskIds.contains(refId)) return
             notifiedTaskIds.add(refId)
+            appContext?.let { NotificationStorage.saveNotifiedTaskIds(it, notifiedTaskIds) }
         }
         // منع إشعارات الاتصال/الحالة المتكررة
         if (notification.type in setOf(NotificationType.CONNECTED, NotificationType.ERROR, NotificationType.INFO, NotificationType.SERVER_DOWN, NotificationType.TEST_SUCCESS)) {
@@ -133,20 +174,29 @@ object AppState {
         }
         val current = notifications.value?.toMutableList() ?: mutableListOf()
         current.add(0, notification)
-        // الاحتفاظ بآخر 100 إشعار فقط
         if (current.size > 100) current.removeAt(current.size - 1)
         notifications.postValue(current)
         val unread = current.count { !it.isRead }
         unreadNotificationCount.postValue(unread)
+        // حفظ دائم في SharedPreferences
+        appContext?.let { NotificationStorage.saveNotifications(it, current) }
     }
 
     fun markAllNotificationsRead() {
         val updated = notifications.value?.map { it.copy(isRead = true) } ?: emptyList()
         notifications.postValue(updated)
         unreadNotificationCount.postValue(0)
+        appContext?.let { NotificationStorage.saveNotifications(it, updated) }
     }
 
     private val notifiedFinalStatuses = mutableMapOf<String, OrderStatus>()
+
+    private fun notifyOnce(requestId: String, status: OrderStatus, build: () -> DeviceNotification) {
+        if (notifiedFinalStatuses[requestId] == status) return
+        notifiedFinalStatuses[requestId] = status
+        appContext?.let { NotificationStorage.saveNotifiedFinalStatuses(it, notifiedFinalStatuses) }
+        addNotification(build())
+    }
 
     fun onTaskResult(task: TaskScanner.Task, result: TaskScanner.ScanResult) {
         lastSmsScannedAt.postValue(System.currentTimeMillis())
@@ -232,6 +282,8 @@ object AppState {
                 }
             }
         }
+        // بعد كل نتيجة: تحقق إذا كل المهام انتهت وأصفر الـ badge
+        clearPendingTasksIfDone()
     }
 
     /** يحدث الطلب ويحافظ على Snapshot ويمنع مسح البيانات الأساسية */

@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        NetworkMonitor.stop(this)
+        NetworkMonitor.stop()
     }
 
     private fun startServiceIfConfigured() {

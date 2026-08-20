@@ -29,9 +29,6 @@ class NaderAiApplication : Application() {
         }
 
         // P0 FIX: NEVER wipe pending orders on app update.
-        // Orders are fetched from server on next heartbeat; local cache is just a display layer.
-        // Old call was: OrderStorage.clearIfVersionChanged(this, BuildConfig.VERSION_NAME)
-        // The version is only stored now for diagnostic purposes — no cache wipe.
         OrderStorage.markVersion(this, BuildConfig.VERSION_NAME)
 
         // تحميل الطلبات المحلية عند بدء التطبيق
@@ -43,6 +40,9 @@ class NaderAiApplication : Application() {
         } catch (e: Exception) {
             android.util.Log.e("NaderAiApplication", "Failed to load cached orders: ${e.message}")
         }
+
+        // تهيئة الإشعارات الدائمة (تُحمّل من SharedPreferences)
+        AppState.initNotifications(this)
 
         // تجهيز السجلات المنظّمة
         OrderEventLogger.init { HeartbeatManager.getDeviceId(this) }

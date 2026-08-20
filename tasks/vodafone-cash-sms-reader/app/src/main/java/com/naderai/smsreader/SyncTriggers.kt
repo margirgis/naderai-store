@@ -63,11 +63,22 @@ object SyncTriggers {
 
     /**
      * يُستدعى عند عودة الاتصال بالإنترنت.
+     * يجب أن يُشغّل مزامنة فورية بغض النظر عن حالة orderSyncManager الحالية.
      */
     fun onNetworkAvailable(ctx: Context) {
         val app = ctx.applicationContext
         OrderEventLogger.syncRequest("network_reconnect", HeartbeatManager.getDeviceId(app))
-        triggerSync(app, "network_reconnect")
+        android.util.Log.i("SyncTriggers", "onNetworkAvailable — forcing immediate sync for missed tasks")
+        // نُعيد تشغيل الـ admin sync بقوة (بغض النظر عن adminUrl المخزّن)
+        forceRestartAdminSync(app)
+        // إذا كان هناك webhook مُعرَّف، اطلب sync من HeartbeatManager أيضاً
+        val prefs = app.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+        val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+        val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl) ?: ""
+        val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
+        if (webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
+            SmsMonitorService.forceSync(app)
+        }
     }
 
     /**
@@ -103,6 +114,22 @@ object SyncTriggers {
         orderSyncManager?.stop()
         orderSyncManager = OrderSyncManager(ctx, adminUrl) { _, _ -> }
         orderSyncManager?.start()
+    }
+
+    /**
+     * يُعيد تشغيل admin sync بقوة (حتى لو adminUrl لم يتغيّر) — يُستخدم عند reconnect.
+     * الفرق عن startAdminSync: لا يتحقق من adminUrl المخزّن، يُوقف ويُعيد دائماً.
+     */
+    private fun forceRestartAdminSync(ctx: Context) {
+        val rawUrl = ctx.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(MainActivity.KEY_WEBHOOK_URL, null)
+        val adminUrl = SupabaseConfig.getAdminOrdersUrl(rawUrl) ?: return
+        android.util.Log.d("SyncTriggers", "forceRestartAdminSync: restarting OrderSyncManager")
+        orderSyncManager?.stop()
+        orderSyncManager = OrderSyncManager(ctx, adminUrl) { _, _ -> }
+        orderSyncManager?.start()
+        // sync فوري إضافي لجلب الطلبات الفائتة
+        orderSyncManager?.sync()
     }
 
     private fun startPeriodicSync(ctx: Context) {
