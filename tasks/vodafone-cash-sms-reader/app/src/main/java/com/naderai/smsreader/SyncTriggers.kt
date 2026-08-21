@@ -63,19 +63,26 @@ object SyncTriggers {
 
     /**
      * يُستدعى عند عودة الاتصال بالإنترنت.
-     * يجب أن يُشغّل مزامنة فورية بغض النظر عن حالة orderSyncManager الحالية.
+     * يشغّل: 1) drain للـ RetryQueue 2) restart OrderSyncManager 3) forceSync للـ Heartbeat
      */
     fun onNetworkAvailable(ctx: Context) {
         val app = ctx.applicationContext
         OrderEventLogger.syncRequest("network_reconnect", HeartbeatManager.getDeviceId(app))
-        android.util.Log.i("SyncTriggers", "onNetworkAvailable — forcing immediate sync for missed tasks")
-        // نُعيد تشغيل الـ admin sync بقوة (بغض النظر عن adminUrl المخزّن)
-        forceRestartAdminSync(app)
-        // إذا كان هناك webhook مُعرَّف، اطلب sync من HeartbeatManager أيضاً
+        android.util.Log.i("SyncTriggers", "onNetworkAvailable — forcing immediate sync + drain retry queue")
+
+        // 1. استنزف RetryQueue بالطلبات المعلقة (backoff, max 5 retries)
         val prefs = app.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
         val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
         val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl) ?: ""
         val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
+        if (webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
+            RetryQueue.drainOnReconnect(app, webhookUrl, secret)
+        }
+
+        // 2. أعد تشغيل admin sync
+        forceRestartAdminSync(app)
+
+        // 3. اطلب sync من HeartbeatManager لجلب الطلبات الفائتة
         if (webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
             SmsMonitorService.forceSync(app)
         }

@@ -67,15 +67,15 @@ object OrderDiagnosticsLog {
         val orderNumber: Long?,               // رقم الطلب المرئي
         val requestId: String?,               // UUID الطلب
         val taskId: String?,
+        val traceId: String?,                 // Phase-3: trace_id من البداية للنهاية
+        val durationMs: Long?,                // Phase-3: مدة الخطوة
+        val retryCount: Int,                  // Phase-3: عدد المحاولات
         val details: String?,                 // تفاصيل حرة
         val serverCode: Int?,                 // HTTP code إذا متاح
         val serverResponse: String?,          // أول 300 حرف من رد السيرفر
     ) {
-        val tsFormatted: String
-            get() {
-                val sdf = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
-                return sdf.format(Date(ts))
-            }
+        val tsFormatted: String get() =
+            SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(ts))
 
         fun toJson(): JSONObject = JSONObject().apply {
             put("id", id)
@@ -86,6 +86,9 @@ object OrderDiagnosticsLog {
             put("order_number", orderNumber ?: JSONObject.NULL)
             put("request_id", requestId ?: JSONObject.NULL)
             put("task_id", taskId ?: JSONObject.NULL)
+            put("trace_id", traceId ?: JSONObject.NULL)
+            put("duration_ms", durationMs ?: JSONObject.NULL)
+            put("retry_count", retryCount)
             put("details", details ?: JSONObject.NULL)
             put("server_code", serverCode ?: JSONObject.NULL)
             put("server_response", serverResponse ?: JSONObject.NULL)
@@ -94,8 +97,11 @@ object OrderDiagnosticsLog {
         fun toText(): String = buildString {
             append("[${tsFormatted}] ${type.emoji} ${type.label}")
             if (orderNumber != null) append(" | طلب#$orderNumber")
+            if (!traceId.isNullOrEmpty()) append(" | trace=${traceId.take(12)}")
             if (!requestId.isNullOrEmpty()) append(" | req=${requestId.take(8)}")
             if (!taskId.isNullOrEmpty()) append(" | task=${taskId.take(8)}")
+            if (durationMs != null) append(" | dur=${durationMs}ms")
+            if (retryCount > 0) append(" | retry=$retryCount")
             if (!details.isNullOrEmpty()) append(" | $details")
             if (serverCode != null) append(" | HTTP=$serverCode")
             if (!serverResponse.isNullOrEmpty()) append(" | resp=${serverResponse.take(200)}")
@@ -103,11 +109,18 @@ object OrderDiagnosticsLog {
     }
 
     private val entries = CopyOnWriteArrayList<LogEntry>()
-    private val MAX_ENTRIES = 500
+    private const val MAX_ENTRIES = 500
     private var idCounter = 0L
 
     // LiveData للمراقبة الفورية من الـ UI
     val liveEntries = androidx.lifecycle.MutableLiveData<List<LogEntry>>(emptyList())
+
+    /** يولّد trace_id موحّد: orderId[:8] + timestamp hex — ثابت طوال عمر الطلب */
+    fun buildTraceId(requestId: String?): String {
+        val prefix = requestId?.take(8)?.replace("-", "") ?: "00000000"
+        val ts = java.lang.Long.toHexString(System.currentTimeMillis()).takeLast(8)
+        return "$prefix-$ts"
+    }
 
     @Synchronized
     fun log(
@@ -115,6 +128,9 @@ object OrderDiagnosticsLog {
         orderNumber: Long? = null,
         requestId: String? = null,
         taskId: String? = null,
+        traceId: String? = null,
+        durationMs: Long? = null,
+        retryCount: Int = 0,
         details: String? = null,
         serverCode: Int? = null,
         serverResponse: String? = null,
@@ -126,13 +142,15 @@ object OrderDiagnosticsLog {
             orderNumber = orderNumber,
             requestId = requestId,
             taskId = taskId,
+            traceId = traceId,
+            durationMs = durationMs,
+            retryCount = retryCount,
             details = details,
             serverCode = serverCode,
             serverResponse = serverResponse?.take(300),
         )
         entries.add(0, entry) // أحدث أولاً
         if (entries.size > MAX_ENTRIES) {
-            // احذف الإدخالات الأقدم
             while (entries.size > MAX_ENTRIES) entries.removeAt(entries.size - 1)
         }
         android.util.Log.d("DiagLog", entry.toText())
@@ -143,6 +161,17 @@ object OrderDiagnosticsLog {
 
     fun getForOrder(requestId: String): List<LogEntry> =
         entries.filter { it.requestId == requestId }
+
+    /** أحدث traceId لطلب معيّن */
+    fun getTraceId(requestId: String): String? =
+        entries.firstOrNull { it.requestId == requestId && !it.traceId.isNullOrEmpty() }?.traceId
+
+    /** آخر خطأ من أي طلب */
+    fun getLastError(): LogEntry? =
+        entries.firstOrNull { it.type in setOf(EventType.GENERIC_ERROR, EventType.NETWORK_ERROR, EventType.AUTH_ERROR, EventType.SERVER_RESPONSE_ERROR, EventType.SMS_SCAN_FAILED, EventType.SMS_PARSE_FAILED) }
+
+    /** آخر event من نوع معيّن */
+    fun getLastOfType(type: EventType): LogEntry? = entries.firstOrNull { it.type == type }
 
     fun getRecent(n: Int = 100): List<LogEntry> = entries.take(n)
 

@@ -102,7 +102,62 @@ Deno.serve(async (req: Request) => {
   });
 
   if (error) {
+    // Phase-3: سجّل الخطأ في order_events مع trace_id
+    const traceId = payload.result_data?.trace_id as string | undefined
+      ?? payload.task_id?.slice(0, 8) + '-err';
+    await db.from('order_events').insert({
+      order_id: paymentOrderId ?? null,
+      trace_id: traceId,
+      device_id: deviceId,
+      event_type: 'ERROR',
+      status: 'failed',
+      reason: error.message,
+      error_code: 'TASK_COMPLETE_FAILED',
+      actor: `device:${deviceId}`,
+      metadata: { task_id: payload.task_id, status: payload.status },
+    }).then(() => {});
     return errorResponse(`TASK_COMPLETE_FAILED: ${error.message}`, 500);
+  }
+
+  // Phase-3: سجّل الحدث الناجح في order_events مع trace_id
+  const traceId = payload.result_data?.trace_id as string | undefined
+    ?? payload.task_id?.slice(0, 8) + '-ok';
+  const finalStatus = payload.status ?? 'success';
+  const eventType = finalStatus === 'success' ? 'CONFIRMATION'
+    : finalStatus === 'amount_mismatch' ? 'AMOUNT_CHECK'
+    : finalStatus === 'duplicate'       ? 'DUPLICATE_CHECK'
+    : 'SERVER_VERIFY';
+
+  await db.from('order_events').insert({
+    order_id: paymentOrderId ?? null,
+    trace_id: traceId,
+    device_id: deviceId,
+    user_id: user.id,
+    event_type: eventType,
+    status: 'ok',
+    result: finalStatus,
+    reason: payload.failure_reason ?? null,
+    actor: `device:${deviceId}`,
+    metadata: {
+      task_id:         payload.task_id,
+      idempotency_key: payload.idempotency_key,
+      transaction_id:  (payload.result_data?.transaction_id as string) ?? null,
+    },
+  }).then(() => {});
+
+  // Phase-3: audit log للحالات المالية (confirmed / duplicate)
+  if (finalStatus === 'success' || finalStatus === 'duplicate') {
+    await db.from('financial_audit_log').insert({
+      event_type: finalStatus === 'success' ? 'CONFIRMATION' : 'DUPLICATE_CHECK',
+      order_id:   paymentOrderId ?? null,
+      transaction_id: (payload.result_data?.transaction_id as string) ?? null,
+      actor:      `device:${deviceId}`,
+      amount:     (payload.result_data?.amount as number) ?? null,
+      decision:   finalStatus === 'success' ? 'confirmed' : 'duplicate',
+      reason:     payload.failure_reason ?? null,
+      trace_id:   traceId,
+      metadata:   { task_id: payload.task_id, user_id: user.id },
+    }).then(() => {});
   }
 
   return jsonResponse({ ok: true, ...data, tokens });

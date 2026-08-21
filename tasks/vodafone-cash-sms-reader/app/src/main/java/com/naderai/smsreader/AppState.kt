@@ -337,7 +337,7 @@ object AppState {
             scanStatus == "duplicate"        -> OrderStatus.DUPLICATE
             scanStatus == "amount_mismatch"  -> OrderStatus.AMOUNT_MISMATCH
             scanStatus == "manual_review"    -> OrderStatus.MANUAL_REVIEW
-            scanStatus == "rejected"         -> OrderStatus.NOT_FOUND
+            scanStatus == "rejected"         -> OrderStatus.REJECTED   // Phase-3: رُفض صراحةً → حالة نهائية
             scanStatus == "not_found"        -> OrderStatus.NOT_FOUND
             scanStatus == "failed"           -> OrderStatus.FAILED
             !ok                              -> OrderStatus.FAILED
@@ -479,8 +479,8 @@ enum class OrderStatus(val label: String, val color: String) {
     PENDING("قيد الانتظار", "#F59E0B"),
     SCANNING("جاري الفحص", "#3B82F6"),
     MATCHING("جاري المطابقة", "#0EA5E9"),
-    SMS_FOUND("تم العثور على الرسالة", "#6366F1"),   // Phase-2: وُجدت SMS مطابقة، لم تُؤكَّد بعد
-    REVIEWING("جاري المراجعة", "#8B5CF6"),             // Phase-2: تحقق من الحقول قبل الإرسال
+    SMS_FOUND("تم العثور على الرسالة", "#6366F1"),   // Phase-2
+    REVIEWING("جاري المراجعة", "#8B5CF6"),             // Phase-2
     MATCHED("تم العثور على تطابق", "#10B981"),
     WAITING_CONFIRMATION("بانتظار التأكيد", "#F97316"),
     CONFIRMED("تم التأكيد", "#059669"),
@@ -491,13 +491,16 @@ enum class OrderStatus(val label: String, val color: String) {
     FAILED("فشل", "#DC2626"),
     DUPLICATE("مكرر", "#8B5CF6"),
     EXPIRED("انتهت الصلاحية", "#64748B"),
+    CANCELLED("ملغي", "#9CA3AF"),        // Phase-3: ألغي صراحةً
+    REJECTED("مرفوض", "#DC2626"),        // Phase-3: رُفض من السيرفر
     ADMIN_OFFLINE("الجهاز غير متصل", "#F97316"),
     WAITING_FOR_VERIFICATION("ينتظر الجهاز", "#FBBF24"),
     REOPENED("أُعيد فتحه", "#8B5CF6");
 
-    /** الحالات النهائية التي لا يُعاد فتحها بعدها */
+    /** الحالات النهائية — لا يُعاد الفحص بعدها تلقائياً (Phase-3) */
     fun isTerminal(): Boolean = this in setOf(
-        COMPLETED, CONFIRMED, FAILED, NOT_FOUND, AMOUNT_MISMATCH, DUPLICATE, EXPIRED
+        COMPLETED, CONFIRMED, FAILED, NOT_FOUND, AMOUNT_MISMATCH,
+        DUPLICATE, EXPIRED, CANCELLED, REJECTED
     )
 
     companion object {
@@ -517,7 +520,9 @@ enum class OrderStatus(val label: String, val color: String) {
             "amount_mismatch", "amount-mismatch" -> AMOUNT_MISMATCH
             "manual_review", "manual-review" -> MANUAL_REVIEW
             "not_found", "not-found" -> NOT_FOUND
-            "failed", "rejected" -> FAILED
+            "failed" -> FAILED
+            "rejected" -> REJECTED
+            "cancelled", "canceled" -> CANCELLED
             "expired" -> EXPIRED
             "reopened" -> REOPENED
             "admin_offline", "admin-offline" -> ADMIN_OFFLINE
