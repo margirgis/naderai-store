@@ -108,19 +108,18 @@ class SmsMonitorService : Service() {
             }
 
             // ── نافذة انتهاء الصلاحية ─────────
-            // لو الطلب انتهى فوق شروط مسموح بيها (مثلاً 24 ساعة)، نرفض فوري.
-            // لكن الآن نتيح فتح الطلب للمراجعة في الاتصال الأولى، لذا نمنح الفحص الحاقزي في نفسه.
+            // القاعدة: إذا انتهت صلاحية الطلب (orderExpiresAt) → نرفض فوراً.
+            // لا توجد "grace period" إضافية — الـ expiry هو expiry.
             if (!task.orderExpiresAt.isNullOrEmpty()) {
                 try {
                     val expiresMs = java.time.Instant.parse(task.orderExpiresAt).toEpochMilli()
-                    val deadlineMs = expiresMs + 24 * 60 * 60 * 1000L // 24 ساعة فوق انتهاء الصلاحية
-                    if (System.currentTimeMillis() > deadlineMs) {
+                    if (System.currentTimeMillis() > expiresMs) {
                         android.util.Log.w("SmsMonitorService",
-                            "Task ${task.taskId}: order expired long ago (${task.orderExpiresAt}) — rejecting immediately")
+                            "ORDER_EXPIRED | order=${task.requestId} task=${task.taskId} expires=${task.orderExpiresAt}")
                         TaskScanner.sendTaskResult(
                             context = context,
                             task = task,
-                            result = TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب منذ فترة طويلة"),
+                            result = TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب"),
                             webhookUrl = webhookUrl,
                             secret = secret,
                             onSent = { _ -> }
@@ -149,15 +148,17 @@ class SmsMonitorService : Service() {
 
         private fun applyCachedStatus(requestId: String, cached: TaskResultCache.CachedResult) {
             // حالة الكاش تعكس ما أرسله الجهاز — ليس قرار السيرفر.
-            // نضع MANUAL_REVIEW لو success (السيرفر لم يرد بعد من الكاش)
-            // أو الحالات الأخرى مباشرة.
+            // success من الكاش = وجدنا SMS وأرسلناه، لكن رد السيرفر لم يُحفظ بعد.
+            // نضع WAITING_CONFIRMATION حتى يرد السيرفر — لا MANUAL_REVIEW.
+            // MANUAL_REVIEW محجوز للسيرفر فقط (sender_phone_mismatch, sms_expired).
             val status = when (cached.status) {
-                "success"        -> OrderStatus.MANUAL_REVIEW
+                "success"        -> OrderStatus.WAITING_CONFIRMATION
                 "amount_mismatch"-> OrderStatus.AMOUNT_MISMATCH
                 "not_found"      -> OrderStatus.NOT_FOUND
                 "failure"        -> OrderStatus.FAILED
                 else             -> OrderStatus.PENDING
             }
+            android.util.Log.i("SmsMonitorService", "CACHE_STATUS | order=$requestId cached=${cached.status} → $status")
             if (status != OrderStatus.PENDING) {
                 AppState.updateOrderStatus(requestId, status)
             }
