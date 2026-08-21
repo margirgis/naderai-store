@@ -55,6 +55,7 @@ class HeartbeatManager(
         private const val MAX_BACKOFF_STEPS = 8
         // Watchdog constants
         private const val WATCHDOG_INTERVAL_MS = 90_000L
+        const val PREFS_NAME = "naderai_sms_reader"
         const val KEY_DEVICE_ID = "device_id"
 
         fun getDeviceId(context: Context): String {
