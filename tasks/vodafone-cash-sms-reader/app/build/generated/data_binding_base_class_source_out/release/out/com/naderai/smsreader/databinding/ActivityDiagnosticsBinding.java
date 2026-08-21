@@ -21,6 +21,9 @@ public final class ActivityDiagnosticsBinding implements ViewBinding {
   private final ScrollView rootView;
 
   @NonNull
+  public final Button btnForceSync;
+
+  @NonNull
   public final Button btnOpenSettings;
 
   @NonNull
@@ -47,12 +50,13 @@ public final class ActivityDiagnosticsBinding implements ViewBinding {
   @NonNull
   public final TextView statusService;
 
-  private ActivityDiagnosticsBinding(@NonNull ScrollView rootView, @NonNull Button btnOpenSettings,
-      @NonNull Button btnRefresh, @NonNull TextView diagnosticText, @NonNull TextView statusBattery,
-      @NonNull TextView statusConnection, @NonNull TextView statusLastScan,
-      @NonNull TextView statusPendingOrders, @NonNull TextView statusPermissions,
-      @NonNull TextView statusService) {
+  private ActivityDiagnosticsBinding(@NonNull ScrollView rootView, @NonNull Button btnForceSync,
+      @NonNull Button btnOpenSettings, @NonNull Button btnRefresh, @NonNull TextView diagnosticText,
+      @NonNull TextView statusBattery, @NonNull TextView statusConnection,
+      @NonNull TextView statusLastScan, @NonNull TextView statusPendingOrders,
+      @NonNull TextView statusPermissions, @NonNull TextView statusService) {
     this.rootView = rootView;
+    this.btnForceSync = btnForceSync;
     this.btnOpenSettings = btnOpenSettings;
     this.btnRefresh = btnRefresh;
     this.diagnosticText = diagnosticText;
@@ -91,6 +95,12 @@ public final class ActivityDiagnosticsBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      id = R.id.btnForceSync;
+      Button btnForceSync = ViewBindings.findChildViewById(rootView, id);
+      if (btnForceSync == null) {
+        break missingId;
+      }
+
       id = R.id.btnOpenSettings;
       Button btnOpenSettings = ViewBindings.findChildViewById(rootView, id);
       if (btnOpenSettings == null) {
@@ -145,9 +155,9 @@ public final class ActivityDiagnosticsBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivityDiagnosticsBinding((ScrollView) rootView, btnOpenSettings, btnRefresh,
-          diagnosticText, statusBattery, statusConnection, statusLastScan, statusPendingOrders,
-          statusPermissions, statusService);
+      return new ActivityDiagnosticsBinding((ScrollView) rootView, btnForceSync, btnOpenSettings,
+          btnRefresh, diagnosticText, statusBattery, statusConnection, statusLastScan,
+          statusPendingOrders, statusPermissions, statusService);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

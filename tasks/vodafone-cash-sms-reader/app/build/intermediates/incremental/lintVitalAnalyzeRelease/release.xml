@@ -6,7 +6,7 @@
     mergedManifest="build/intermediates/merged_manifest/release/AndroidManifest.xml"
     proguardFiles="build/intermediates/default_proguard_files/global/proguard-android-optimize.txt-8.2.2:proguard-rules.pro"
     partialResultsDir="build/intermediates/lint_vital_partial_results/release/out"
-    desugaredMethodsFiles="/root/.gradle/caches/transforms-3/9800946bb6bb399df0a0c9d35948c37c/transformed/D8BackportedDesugaredMethods.txt">
+    desugaredMethodsFiles="/root/.gradle/caches/transforms-4/6e0076e3b78a638668037f9969295295/transformed/D8BackportedDesugaredMethods.txt">
   <buildFeatures
       viewBinding="true"
       namespacing="REQUIRED"/>
@@ -27,6 +27,6 @@
       applicationId="com.naderai.smsreader"
       generatedSourceFolders="build/generated/ap_generated_sources/release/out:build/generated/source/buildConfig/release:build/generated/data_binding_base_class_source_out/release/out"
       generatedResourceFolders="build/generated/res/resValues/release"
-      desugaredMethodsFiles="/root/.gradle/caches/transforms-3/9800946bb6bb399df0a0c9d35948c37c/transformed/D8BackportedDesugaredMethods.txt">
+      desugaredMethodsFiles="/root/.gradle/caches/transforms-4/6e0076e3b78a638668037f9969295295/transformed/D8BackportedDesugaredMethods.txt">
   </artifact>
 </variant>

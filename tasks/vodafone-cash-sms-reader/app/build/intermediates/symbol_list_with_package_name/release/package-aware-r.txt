@@ -2972,6 +2972,7 @@ drawable abc_textfield_search_material
 drawable abc_vector_test
 drawable avd_hide_password
 drawable avd_show_password
+drawable badge_background
 drawable badge_bg
 drawable btn_checkbox_checked_mtrl
 drawable btn_checkbox_checked_to_unchecked_mtrl_animation
@@ -3189,6 +3190,7 @@ id bounceBoth
 id bounceEnd
 id bounceStart
 id btnConfirmManual
+id btnForceSync
 id btnGrantPermissions
 id btnListAll
 id btnOpenDiagnostics
@@ -3463,12 +3465,18 @@ id open_search_view_toolbar_container
 id orderAmountText
 id orderCreatedAt
 id orderCreditsText
+id orderCurrencyText
 id orderCustomerEmail
-id orderCustomerPhone
+id orderCustomerName
 id orderFailureReason
 id orderIdText
+id orderMatchAmount
+id orderMatchStatus
 id orderPaymentMethod
 id orderScanProgress
+id orderSenderName
+id orderSenderPhone
+id orderSmsAge
 id orderStatusBadge
 id orderTxId
 id ordersRecycler
@@ -5299,3 +5307,4 @@ styleable ViewPager2 android_orientation
 styleable ViewStubCompat android_id android_layout android_inflatedId
 styleable ViewTransition android_id SharedValue SharedValueId clearsTag duration ifTagNotSet ifTagSet motionInterpolator motionTarget onStateTransition pathMotionArc setsTag transitionDisable upDuration viewTransitionMode
 styleable include constraintSet
+xml file_provider_paths

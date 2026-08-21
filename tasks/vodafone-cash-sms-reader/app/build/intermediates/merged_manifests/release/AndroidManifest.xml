@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.naderai.smsreader"
-    android:versionCode="21"
-    android:versionName="1.1.10" >
+    android:versionCode="57"
+    android:versionName="1.1.57" >
 
     <uses-sdk
         android:minSdkVersion="24"
@@ -14,6 +14,7 @@
 
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Foreground service (keep alive in background) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -28,7 +29,6 @@
 
     <!-- Post notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <permission
         android:name="com.naderai.smsreader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
@@ -100,6 +100,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- FileProvider: لتصدير ملفات التشخيص (JSON/TXT) عبر Intent.ACTION_SEND -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.naderai.smsreader.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" >
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="com.naderai.smsreader.androidx-startup"

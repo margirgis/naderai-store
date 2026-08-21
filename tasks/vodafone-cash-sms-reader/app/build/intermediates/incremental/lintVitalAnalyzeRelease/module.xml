@@ -6,7 +6,7 @@
     maven="Vodafone Cash SMS Reader:app:"
     agpVersion="8.2.2"
     buildFolder="build"
-    bootClassPath="/tmp/android-sdk/platforms/android-34/android.jar:/tmp/android-sdk/build-tools/34.0.0/core-lambda-stubs.jar"
+    bootClassPath="/opt/android-sdk/platforms/android-34/android.jar:/opt/android-sdk/build-tools/34.0.0/core-lambda-stubs.jar"
     javaSourceLevel="1.8"
     compileTarget="android-34"
     neverShrinking="true">

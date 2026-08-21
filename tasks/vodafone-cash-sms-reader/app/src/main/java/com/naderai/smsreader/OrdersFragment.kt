@@ -63,6 +63,8 @@ class OrdersFragment : Fragment() {
                     val accessToken  = AdminSession.accessToken(context)  ?: ""
                     val refreshToken = AdminSession.refreshToken(context) ?: ""
                     val confirmUrl = SupabaseConfig.getAdminManualConfirmUrl(supabaseUrl) ?: ""
+                    // ✅ FIX: إرسال access_token كـ Bearer token في Authorization header
+                    // admin-manual-confirm يستخدم requireAdmin الذي يتحقق من Authorization header
                     WebhookSender.sendAdminJson(
                         url = confirmUrl,
                         body = mapOf(
@@ -71,9 +73,11 @@ class OrdersFragment : Fragment() {
                             "reason"            to "تأكيد يدوي من الجهاز",
                             "access_token"      to accessToken,
                             "refresh_token"     to refreshToken
-                        )
-                    ) { success, message, _ ->
+                        ),
+                        adminToken = accessToken  // ✅ يُرسَل كـ Bearer في Authorization header
+                    ) { success, message, responseBody ->
                         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                            android.util.Log.d("OrdersFragment", "manual-confirm response: success=$success msg=$message body=$responseBody")
                             if (success) {
                                 AppState.updateOrderStatus(order.requestId, OrderStatus.COMPLETED)
                                 android.widget.Toast.makeText(context, "✅ تم التأكيد اليدوي", android.widget.Toast.LENGTH_SHORT).show()
@@ -185,12 +189,10 @@ class OrdersFragment : Fragment() {
 
         android.widget.Toast.makeText(context, toast, android.widget.Toast.LENGTH_SHORT).show()
 
-        // PHASE 12: رفض sender_phone إذا كان فارغاً أو يساوي receiver_wallet
+        // ✅ FIX: لا نرفض الطلب بسبب sender_phone الفارغ هنا
+        // TaskScanner نفسه يتعامل مع الحالة: إذا لم يوجد sender_phone، يفحص بناءً على المبلغ فقط
+        // الرفض المبكر كان يمنع الطلبات الجديدة من الوصول للفحص
         val senderPhone = order.senderPhoneRequested?.trim().orEmpty()
-        if (senderPhone.isEmpty()) {
-            android.widget.Toast.makeText(context, "رقم المُحوِّل غير متوفر — لا يمكن بدء الفحص", android.widget.Toast.LENGTH_LONG).show()
-            return
-        }
         if (senderPhone == "01097273680") {
             android.widget.Toast.makeText(context, "رقم محفظة الاستلام لا يُستخدم كرقم مُحوِّل", android.widget.Toast.LENGTH_LONG).show()
             return

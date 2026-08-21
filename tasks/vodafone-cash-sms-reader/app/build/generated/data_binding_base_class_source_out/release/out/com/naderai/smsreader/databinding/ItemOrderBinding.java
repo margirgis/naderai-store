@@ -46,10 +46,13 @@ public final class ItemOrderBinding implements ViewBinding {
   public final TextView orderCreditsText;
 
   @NonNull
+  public final TextView orderCurrencyText;
+
+  @NonNull
   public final TextView orderCustomerEmail;
 
   @NonNull
-  public final TextView orderCustomerPhone;
+  public final TextView orderCustomerName;
 
   @NonNull
   public final TextView orderFailureReason;
@@ -58,10 +61,25 @@ public final class ItemOrderBinding implements ViewBinding {
   public final TextView orderIdText;
 
   @NonNull
+  public final TextView orderMatchAmount;
+
+  @NonNull
+  public final TextView orderMatchStatus;
+
+  @NonNull
   public final TextView orderPaymentMethod;
 
   @NonNull
   public final TextView orderScanProgress;
+
+  @NonNull
+  public final TextView orderSenderName;
+
+  @NonNull
+  public final TextView orderSenderPhone;
+
+  @NonNull
+  public final TextView orderSmsAge;
 
   @NonNull
   public final TextView orderStatusBadge;
@@ -73,9 +91,12 @@ public final class ItemOrderBinding implements ViewBinding {
       @NonNull View actionDivider, @NonNull Button btnConfirmManual, @NonNull Button btnRescan,
       @NonNull Button btnStartScan, @NonNull TextView orderAmountText,
       @NonNull TextView orderCreatedAt, @NonNull TextView orderCreditsText,
-      @NonNull TextView orderCustomerEmail, @NonNull TextView orderCustomerPhone,
-      @NonNull TextView orderFailureReason, @NonNull TextView orderIdText,
-      @NonNull TextView orderPaymentMethod, @NonNull TextView orderScanProgress,
+      @NonNull TextView orderCurrencyText, @NonNull TextView orderCustomerEmail,
+      @NonNull TextView orderCustomerName, @NonNull TextView orderFailureReason,
+      @NonNull TextView orderIdText, @NonNull TextView orderMatchAmount,
+      @NonNull TextView orderMatchStatus, @NonNull TextView orderPaymentMethod,
+      @NonNull TextView orderScanProgress, @NonNull TextView orderSenderName,
+      @NonNull TextView orderSenderPhone, @NonNull TextView orderSmsAge,
       @NonNull TextView orderStatusBadge, @NonNull TextView orderTxId) {
     this.rootView = rootView;
     this.actionButtons = actionButtons;
@@ -86,12 +107,18 @@ public final class ItemOrderBinding implements ViewBinding {
     this.orderAmountText = orderAmountText;
     this.orderCreatedAt = orderCreatedAt;
     this.orderCreditsText = orderCreditsText;
+    this.orderCurrencyText = orderCurrencyText;
     this.orderCustomerEmail = orderCustomerEmail;
-    this.orderCustomerPhone = orderCustomerPhone;
+    this.orderCustomerName = orderCustomerName;
     this.orderFailureReason = orderFailureReason;
     this.orderIdText = orderIdText;
+    this.orderMatchAmount = orderMatchAmount;
+    this.orderMatchStatus = orderMatchStatus;
     this.orderPaymentMethod = orderPaymentMethod;
     this.orderScanProgress = orderScanProgress;
+    this.orderSenderName = orderSenderName;
+    this.orderSenderPhone = orderSenderPhone;
+    this.orderSmsAge = orderSmsAge;
     this.orderStatusBadge = orderStatusBadge;
     this.orderTxId = orderTxId;
   }
@@ -171,15 +198,21 @@ public final class ItemOrderBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.orderCurrencyText;
+      TextView orderCurrencyText = ViewBindings.findChildViewById(rootView, id);
+      if (orderCurrencyText == null) {
+        break missingId;
+      }
+
       id = R.id.orderCustomerEmail;
       TextView orderCustomerEmail = ViewBindings.findChildViewById(rootView, id);
       if (orderCustomerEmail == null) {
         break missingId;
       }
 
-      id = R.id.orderCustomerPhone;
-      TextView orderCustomerPhone = ViewBindings.findChildViewById(rootView, id);
-      if (orderCustomerPhone == null) {
+      id = R.id.orderCustomerName;
+      TextView orderCustomerName = ViewBindings.findChildViewById(rootView, id);
+      if (orderCustomerName == null) {
         break missingId;
       }
 
@@ -195,6 +228,18 @@ public final class ItemOrderBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.orderMatchAmount;
+      TextView orderMatchAmount = ViewBindings.findChildViewById(rootView, id);
+      if (orderMatchAmount == null) {
+        break missingId;
+      }
+
+      id = R.id.orderMatchStatus;
+      TextView orderMatchStatus = ViewBindings.findChildViewById(rootView, id);
+      if (orderMatchStatus == null) {
+        break missingId;
+      }
+
       id = R.id.orderPaymentMethod;
       TextView orderPaymentMethod = ViewBindings.findChildViewById(rootView, id);
       if (orderPaymentMethod == null) {
@@ -204,6 +249,24 @@ public final class ItemOrderBinding implements ViewBinding {
       id = R.id.orderScanProgress;
       TextView orderScanProgress = ViewBindings.findChildViewById(rootView, id);
       if (orderScanProgress == null) {
+        break missingId;
+      }
+
+      id = R.id.orderSenderName;
+      TextView orderSenderName = ViewBindings.findChildViewById(rootView, id);
+      if (orderSenderName == null) {
+        break missingId;
+      }
+
+      id = R.id.orderSenderPhone;
+      TextView orderSenderPhone = ViewBindings.findChildViewById(rootView, id);
+      if (orderSenderPhone == null) {
+        break missingId;
+      }
+
+      id = R.id.orderSmsAge;
+      TextView orderSmsAge = ViewBindings.findChildViewById(rootView, id);
+      if (orderSmsAge == null) {
         break missingId;
       }
 
@@ -221,8 +284,10 @@ public final class ItemOrderBinding implements ViewBinding {
 
       return new ItemOrderBinding((CardView) rootView, actionButtons, actionDivider,
           btnConfirmManual, btnRescan, btnStartScan, orderAmountText, orderCreatedAt,
-          orderCreditsText, orderCustomerEmail, orderCustomerPhone, orderFailureReason, orderIdText,
-          orderPaymentMethod, orderScanProgress, orderStatusBadge, orderTxId);
+          orderCreditsText, orderCurrencyText, orderCustomerEmail, orderCustomerName,
+          orderFailureReason, orderIdText, orderMatchAmount, orderMatchStatus, orderPaymentMethod,
+          orderScanProgress, orderSenderName, orderSenderPhone, orderSmsAge, orderStatusBadge,
+          orderTxId);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

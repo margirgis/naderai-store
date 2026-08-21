@@ -1,5 +1,6 @@
 R_DEF: Internal format may change without notice
 local
+drawable badge_background
 drawable badge_bg
 drawable ic_launcher
 drawable status_offline
@@ -13,6 +14,7 @@ id adminSessionText
 id androidVersionValue
 id appVersionValue
 id btnConfirmManual
+id btnForceSync
 id btnGrantPermissions
 id btnListAll
 id btnOpenDiagnostics
@@ -50,12 +52,18 @@ id notificationBadge
 id orderAmountText
 id orderCreatedAt
 id orderCreditsText
+id orderCurrencyText
 id orderCustomerEmail
-id orderCustomerPhone
+id orderCustomerName
 id orderFailureReason
 id orderIdText
+id orderMatchAmount
+id orderMatchStatus
 id orderPaymentMethod
 id orderScanProgress
+id orderSenderName
+id orderSenderPhone
+id orderSmsAge
 id orderStatusBadge
 id orderTxId
 id ordersRecycler
@@ -96,3 +104,4 @@ layout fragment_home
 layout fragment_orders
 layout fragment_settings
 layout item_order
+xml file_provider_paths
