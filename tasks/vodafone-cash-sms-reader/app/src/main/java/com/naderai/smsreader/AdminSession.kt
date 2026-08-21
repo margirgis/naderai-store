@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -185,13 +187,13 @@ object AdminSession {
                     .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
-                val mediaType = "application/json; charset=utf-8".toMediaTypeOrThrow()
+                val mediaType = "application/json; charset=utf-8".toMediaType()
                 val request = okhttp3.Request.Builder()
                     .url(url)
                     .addHeader("Authorization", "Bearer $anonKey")
                     .addHeader("apikey", anonKey)
                     .addHeader("Content-Type", "application/json")
-                    .post(jsonBody.toRequestBodyBytes(mediaType))
+                    .post(jsonBody.toRequestBody(mediaType))
                     .build()
 
                 client.newCall(request).execute().use { response ->
@@ -240,9 +242,4 @@ object AdminSession {
     }
 }
 
-// ── Extension لاستخدام okhttp3 MediaType داخل AdminSession ─────────────────
-private fun String.toMediaTypeOrThrow(): okhttp3.MediaType {
-    return okhttp3.MediaType.parse(this) ?: throw IllegalArgumentException("Invalid media type: $this")
-}
-private fun String.toRequestBodyBytes(mediaType: okhttp3.MediaType): okhttp3.RequestBody =
-    okhttp3.RequestBody.create(mediaType, this.toByteArray(Charsets.UTF_8))
+// لا حاجة لـ extensions إضافية — نستخدم okhttp3.MediaType.Companion.toMediaType() مباشرةً
