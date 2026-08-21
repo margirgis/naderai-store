@@ -133,9 +133,11 @@ class SmsMonitorService : Service() {
                 "TASK_RECEIVED | order=${task.requestId} task=${task.taskId} " +
                 "queued=${task.queuedAt} dispatched=${task.dispatchedAt} received=${java.time.Instant.ofEpochMilli(receivedMs)}")
 
-            // Fix #4: ORDER_EXPIRED مستقل تماماً عن SESSION_EXPIRED
-            // نحدد سبب التجاهل بدقة: وقت الانتهاء + وقت الاستلام + الفارق
-            if (!task.orderExpiresAt.isNullOrEmpty()) {
+            // Fix #4: ORDER_EXPIRED — نُبلّغ السيرفر فقط إذا الطلب منتهٍ ولم يرسله السيرفر الآن
+            // القاعدة: إذا السيرفر أرسل الطلب ضمن pending_tasks فهو يعني "افحص الآن" بغض النظر عن وقت الانتهاء
+            // → السيرفر هو مرجع انتهاء الصلاحية، ليس الجهاز
+            val serverDispatched = !task.dispatchedAt.isNullOrEmpty() || !task.queuedAt.isNullOrEmpty()
+            if (!task.orderExpiresAt.isNullOrEmpty() && !serverDispatched) {
                 try {
                     val expiresMs = java.time.Instant.parse(task.orderExpiresAt).toEpochMilli()
                     val nowMs = System.currentTimeMillis()
@@ -149,7 +151,6 @@ class SmsMonitorService : Service() {
                             task.orderNumber, task.requestId, task.taskId,
                             details = "ORDER_EXPIRED: expires=${task.orderExpiresAt} overdue_sec=$overdueSec — ليس SESSION_EXPIRED"
                         )
-                        // تحديث حالة الطلب إلى EXPIRED لا FAILED
                         AppState.updateOrderStatus(task.requestId, OrderStatus.EXPIRED)
                         TaskScanner.sendTaskResult(
                             context = context,
@@ -164,6 +165,17 @@ class SmsMonitorService : Service() {
                 } catch (e: Exception) {
                     android.util.Log.e("SmsMonitorService",
                         "Failed to parse orderExpiresAt: ${task.orderExpiresAt} — continuing scan", e)
+                }
+            } else if (!task.orderExpiresAt.isNullOrEmpty() && serverDispatched) {
+                // السيرفر أرسل الطلب الآن → نُعيد الفحص حتى لو كان EXPIRED محلياً
+                android.util.Log.i("SmsMonitorService",
+                    "ORDER_EXPIRY_BYPASSED | order=${task.requestId} — server dispatched, ignoring local expiry check")
+                // نُعيد الحالة PENDING لتمكين الفحص
+                val local = AppState.getOrders().firstOrNull { it.requestId == task.requestId }
+                if (local?.status == OrderStatus.EXPIRED) {
+                    AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
+                    TaskResultCache.remove(context, task.taskId)
+                    TaskScanner.clearScanLock(task.taskId)
                 }
             }
 

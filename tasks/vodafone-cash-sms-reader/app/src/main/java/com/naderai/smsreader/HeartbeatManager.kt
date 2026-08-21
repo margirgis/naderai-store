@@ -26,6 +26,24 @@ class HeartbeatManager(
     @Volatile private var isRunning = false
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
+    // ── Watchdog: يضمن عدم توقف الـ heartbeat نهائياً ───────────
+    // كل 90 ثانية يتحقق إذا الـ heartbeat لا يزال يعمل، ويُعيد تشغيله إذا توقف
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            if (!isRunning) return
+            val hasPendingCallbacks = handler.hasCallbacks(heartbeatRunnable)
+            if (!hasPendingCallbacks) {
+                android.util.Log.w("HeartbeatManager", "WATCHDOG: heartbeat stopped — restarting")
+                consecutiveFailures = 0
+                sendHeartbeat()
+                val hasPending = (AppState.pendingTasks.value?.size ?: 0) > 0
+                val interval = if (hasPending) HEARTBEAT_INTERVAL_ACTIVE_MS else HEARTBEAT_INTERVAL_IDLE_MS
+                handler.postDelayed(heartbeatRunnable, interval)
+            }
+            handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+        }
+    }
+
     companion object {
         // 10s عند وجود مهام قيد الفحص، 20s في حالة الخمول (بدل 60s لتسريع استلام الطلبات الجديدة)
         private const val HEARTBEAT_INTERVAL_ACTIVE_MS = 10_000L
@@ -35,7 +53,8 @@ class HeartbeatManager(
         private const val BACKOFF_BASE_MS  = 2_000L
         private const val BACKOFF_MAX_MS   = 30_000L
         private const val MAX_BACKOFF_STEPS = 8
-        const val PREFS_NAME = "naderai_sms_reader"
+        // Watchdog constants
+        private const val WATCHDOG_INTERVAL_MS = 90_000L
         const val KEY_DEVICE_ID = "device_id"
 
         fun getDeviceId(context: Context): String {
@@ -69,6 +88,9 @@ class HeartbeatManager(
         registerDevice()
         handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_ACTIVE_MS)
         registerNetworkCallback()
+        // Watchdog: يضمن استمرار الـ heartbeat حتى بعد الـ backoff
+        handler.removeCallbacks(watchdogRunnable)
+        handler.postDelayed(watchdogRunnable, WATCHDOG_INTERVAL_MS)
     }
 
     fun stop() {
@@ -172,13 +194,8 @@ class HeartbeatManager(
     // ── Exponential backoff — على فشل Heartbeat ──────────────────
     private fun scheduleBackoffRetry() {
         consecutiveFailures++
-        if (consecutiveFailures > MAX_BACKOFF_STEPS) {
-            // أوقف الـ periodic timer — ننتظر NetworkCallback
-            handler.removeCallbacks(heartbeatRunnable)
-            android.util.Log.w("HeartbeatManager", "Max retries ($MAX_BACKOFF_STEPS). Waiting for network.")
-            return
-        }
-        val delay = minOf(BACKOFF_BASE_MS * (1L shl (consecutiveFailures - 1)), BACKOFF_MAX_MS)
+        // تحديد delay بحد أقصى BACKOFF_MAX_MS — لكن لا نتوقف نهائياً أبداً
+        val delay = minOf(BACKOFF_BASE_MS * (1L shl minOf(consecutiveFailures - 1, MAX_BACKOFF_STEPS - 1)), BACKOFF_MAX_MS)
         android.util.Log.d("HeartbeatManager", "Heartbeat failed ($consecutiveFailures). Retry in ${delay}ms")
         handler.removeCallbacks(heartbeatRunnable)
         handler.postDelayed({
@@ -308,7 +325,14 @@ class HeartbeatManager(
                     TaskResultCache.remove(context, taskId)
                     TaskScanner.clearScanLock(taskId)
                 }
-
+                // طلبات EXPIRED (غير terminal الآن) → أيضاً نُعيد فحصها
+                if (existingOrder?.status == OrderStatus.EXPIRED) {
+                    android.util.Log.i("HeartbeatManager",
+                        "Server re-dispatched EXPIRED order $requestId — resetting to PENDING for re-scan")
+                    AppState.updateOrderStatus(requestId, OrderStatus.PENDING)
+                    TaskResultCache.remove(context, taskId)
+                    TaskScanner.clearScanLock(taskId)
+                }
 
                 if (!seenTaskIds.add(taskId)) {
                     android.util.Log.w("HeartbeatManager", "Duplicate task_id in heartbeat: $taskId")

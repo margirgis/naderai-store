@@ -79,13 +79,15 @@ object AppState {
                     serverStatus.isTerminal()                                  -> serverStatus
                     // 2. الجهاز وصل لحالة نهائية ولم يرد السيرفر بعكسها → تُحافظ عليها
                     localStatus.isTerminal()                                   -> localStatus
-                    // 3. الجهاز في فحص نشط → لا نُقاطعه بـ PENDING من السيرفر
+                    // 3. إذا السيرفر يعيد PENDING لطلب EXPIRED محلياً → السيرفر يفوز (إعادة فتح الطلب)
+                    localStatus == OrderStatus.EXPIRED && serverStatus == OrderStatus.PENDING -> OrderStatus.PENDING
+                    // 4. الجهاز في فحص نشط → لا نُقاطعه بـ PENDING من السيرفر
                     serverStatus == OrderStatus.PENDING && localStatus == OrderStatus.SCANNING -> localStatus
-                    // 4. الجهاز MANUAL_REVIEW (مؤقتة) والسيرفر يعيد حالة أوضح → السيرفر يفوز
+                    // 5. الجهاز MANUAL_REVIEW (مؤقتة) والسيرفر يعيد حالة أوضح → السيرفر يفوز
                     localStatus == OrderStatus.MANUAL_REVIEW && serverStatus != OrderStatus.PENDING -> serverStatus
-                    // 5. السيرفر يعيد PENDING → نبقي الحالة المحلية الأكثر تقدماً
+                    // 6. السيرفر يعيد PENDING → نبقي الحالة المحلية الأكثر تقدماً
                     serverStatus == OrderStatus.PENDING                        -> localStatus
-                    // 6. باقي الحالات → ما جاء من السيرفر أحدث
+                    // 7. باقي الحالات → ما جاء من السيرفر أحدث
                     else                                                       -> serverStatus
                 }
                 existing.withSnapshotPreserved(order).copy(
@@ -500,7 +502,8 @@ enum class OrderStatus(val label: String, val color: String) {
     /** الحالات النهائية — لا يُعاد الفحص بعدها تلقائياً (Phase-3) */
     fun isTerminal(): Boolean = this in setOf(
         COMPLETED, CONFIRMED, FAILED, NOT_FOUND, AMOUNT_MISMATCH,
-        DUPLICATE, EXPIRED, CANCELLED, REJECTED
+        DUPLICATE, CANCELLED, REJECTED
+        // EXPIRED مُزال عمداً: السيرفر يُعيد إرسال الطلبات المنتهية عند إعادة الاتصال → يجب إعادة فحصها
     )
 
     companion object {
