@@ -172,6 +172,8 @@ class OrderAdapter(
             OrderStatus.PENDING -> "⏳"
             OrderStatus.SCANNING -> "🔍"
             OrderStatus.MATCHING -> "🔎"
+            OrderStatus.SMS_FOUND -> "📩"          // Phase-2
+            OrderStatus.REVIEWING -> "🧐"           // Phase-2
             OrderStatus.MATCHED -> "🎯"
             OrderStatus.WAITING_CONFIRMATION -> "⏳"
             OrderStatus.CONFIRMED -> "✅"
@@ -182,6 +184,8 @@ class OrderAdapter(
             OrderStatus.FAILED -> "🚫"
             OrderStatus.DUPLICATE -> "🔁"
             OrderStatus.EXPIRED -> "⌛"
+            OrderStatus.CANCELLED -> "🚫"           // Phase-3
+            OrderStatus.REJECTED -> "❌"             // Phase-3
             // v2 lifecycle statuses
             OrderStatus.ADMIN_OFFLINE -> "📵"
             OrderStatus.WAITING_FOR_VERIFICATION -> "⏳"
