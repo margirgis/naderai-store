@@ -218,12 +218,12 @@ object AppState {
         when (result) {
             is TaskScanner.ScanResult.Success -> {
                 lastFoundTransaction.postValue(result.message.transactionId)
-                // ── P0 FIX: لا نضع COMPLETED هنا — الـ App وجد الـ SMS فقط.
-                // القرار النهائي (تأكيد أو رفض مكرر) يعود من السيرفر.
-                // نضع MANUAL_REVIEW (جاري المراجعة) مؤقتاً حتى يرد السيرفر.
+                // ── STATE: SMS وُجد — نضع WAITING_CONFIRMATION حتى يرد السيرفر ──
+                // MANUAL_REVIEW محجوزة للسيرفر فقط (sender_phone_mismatch, manual review حقيقي)
+                // لا نضع COMPLETED هنا — القرار النهائي (تأكيد أو رفض مكرر) يعود من السيرفر
                 updateOrderAfterScan(task.requestId) {
                     it.copy(
-                        status = OrderStatus.MANUAL_REVIEW,
+                        status = OrderStatus.WAITING_CONFIRMATION,
                         transactionId = result.message.transactionId ?: it.transactionId,
                         amountFound = result.message.amount ?: it.amountFound,
                         senderPhoneFound = result.message.senderPhone ?: it.senderPhoneFound,
@@ -235,9 +235,10 @@ object AppState {
                     )
                 }
                 OrderEventLogger.matchFound(task.requestId, task.orderNumber, result.message.transactionId)
-                notifyOnce(task.requestId, OrderStatus.MANUAL_REVIEW) {
+                android.util.Log.i("AppState", "MATCH_FOUND | order=${task.requestId} tx=${result.message.transactionId} amount=${result.message.amount} → WAITING_CONFIRMATION")
+                notifyOnce(task.requestId, OrderStatus.WAITING_CONFIRMATION) {
                     DeviceNotification(
-                        title = "تم العثور على العملية — جاري المراجعة",
+                        title = "تم العثور على العملية — جاري التأكيد",
                         message = "المبلغ: ${result.message.amount} — رقم العملية: ${result.message.transactionId ?: "—"}",
                         type = NotificationType.INFO,
                         referenceId = task.requestId
@@ -320,18 +321,17 @@ object AppState {
      */
     fun onServerConfirm(requestId: String, taskId: String, scanStatus: String, ok: Boolean, orderNumber: Long?) {
         val finalStatus = when {
-            ok && scanStatus == "confirmed"         -> OrderStatus.COMPLETED
-            scanStatus == "duplicate"               -> OrderStatus.DUPLICATE
-            // amount_mismatch: السيرفر وجد SMS لكن المبلغ مختلف
-            scanStatus == "amount_mismatch"         -> OrderStatus.AMOUNT_MISMATCH
-            // manual_review من السيرفر = مراجعة يدوية حقيقية (مش نتيجة مبلغ)
-            scanStatus == "manual_review"           -> OrderStatus.MANUAL_REVIEW
-            scanStatus == "rejected"                -> OrderStatus.NOT_FOUND
-            scanStatus == "not_found"               -> OrderStatus.NOT_FOUND
-            scanStatus == "failed"                  -> OrderStatus.FAILED
-            !ok                                     -> OrderStatus.FAILED
-            else                                    -> OrderStatus.COMPLETED
+            ok && scanStatus == "confirmed"  -> OrderStatus.COMPLETED
+            scanStatus == "duplicate"        -> OrderStatus.DUPLICATE
+            scanStatus == "amount_mismatch"  -> OrderStatus.AMOUNT_MISMATCH
+            scanStatus == "manual_review"    -> OrderStatus.MANUAL_REVIEW
+            scanStatus == "rejected"         -> OrderStatus.NOT_FOUND
+            scanStatus == "not_found"        -> OrderStatus.NOT_FOUND
+            scanStatus == "failed"           -> OrderStatus.FAILED
+            !ok                              -> OrderStatus.FAILED
+            else                             -> OrderStatus.COMPLETED
         }
+        android.util.Log.i("AppState", "SERVER_CONFIRM | order=$requestId task=$taskId scanStatus=$scanStatus ok=$ok → $finalStatus")
         val current = orders.value?.toMutableList() ?: return
         val idx = current.indexOfFirst { it.requestId == requestId }
         if (idx >= 0) {

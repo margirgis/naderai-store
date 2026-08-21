@@ -130,7 +130,7 @@ object TaskScanner {
                     attempt++
                     // تحديث UI: المحاولة الحالية
                     AppState.updateOrderScanProgress(task.requestId, attempt, MAX_SCAN_ATTEMPTS, 0)
-                    Log.d(TAG, "Scan attempt $attempt/${MAX_SCAN_ATTEMPTS} for task ${task.taskId}")
+                    Log.i(TAG, "SCAN_ATTEMPT | order=${task.requestId} attempt=$attempt/${MAX_SCAN_ATTEMPTS} task=${task.taskId}")
                     lastResult = scanInbox(context, task)
                     if (lastResult is ScanResult.Success) break
 
@@ -160,8 +160,8 @@ object TaskScanner {
                         Unit
                     },
                     onServerResponse = { scanStatus, ok ->
-                        // ── P0 FIX: السيرفر هو من يقرر — نحدث الحالة بناءً على رده ──
-                        Log.d(TAG, "[SERVER_CONFIRM] task=${task.taskId} scan_status=$scanStatus ok=$ok")
+                        // السيرفر هو من يقرر — نحدث الحالة بناءً على رده
+                        Log.i(TAG, "SERVER_CONFIRM | order=${task.requestId} task=${task.taskId} scan_status=$scanStatus ok=$ok")
                         AppState.onServerConfirm(
                             requestId   = task.requestId,
                             taskId      = task.taskId,
@@ -201,8 +201,7 @@ object TaskScanner {
         // ── P2 FIX: فحص الطابور المحلي أولاً (SMS وصلت قبل task) ────────
         val queued = LocalSmsQueue.findMatch(context, task)
         if (queued != null) {
-            Log.d(TAG, "Queue HIT for task ${task.taskId}: txId=${queued.transactionId} amount=${queued.amount}")
-            // حذف من الطابور بعد المطابقة
+            Log.i(TAG, "MATCH_FOUND | order=${task.requestId} source=LocalQueue txId=${queued.transactionId} amount=${queued.amount} phone=${queued.senderPhone}")
             LocalSmsQueue.remove(context, queued.transactionId)
             return ScanResult.Success(
                 ScannedMessage(
@@ -220,7 +219,7 @@ object TaskScanner {
                 )
             )
         }
-        Log.d(TAG, "Queue MISS for task ${task.taskId} — falling through to inbox scan")
+        Log.i(TAG, "SCAN_INBOX_START | order=${task.requestId} task=${task.taskId} amount=${task.amountRequested} phone=${task.senderPhoneRequested}")
 
         val cursor = context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
@@ -234,10 +233,10 @@ object TaskScanner {
             Telephony.Sms.DATE + " DESC"
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
 
-        // نافذة زمنية: نقبل رسائل عمرها حتى 7 أيام
-        // smsTooOld أُزيل: المستخدم قد يدفع قبل إنشاء الطلب بأيام (حالة مشروعة)
-        // الحماية من إعادة الاستخدام تعتمد على transaction_id في السيرفر وليس على التاريخ
-        val SMS_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000 // 7 أيام
+        // نافذة زمنية: 24 ساعة — متوافق مع DB (confirm_payment_order MAX_SMS_AGE=24h)
+        // مصدر واحد للحقيقة: أي SMS عمره > 24 ساعة يُرفض هنا قبل إرساله للسيرفر
+        // الحماية من إعادة الاستخدام تعتمد على transaction_id في السيرفر
+        val SMS_MAX_AGE_MS = 24L * 60 * 60 * 1000 // 24 ساعة — موحّد مع DB
         val orderCreatedMs: Long? = task.requestCreatedAt?.let {
             runCatching {
                 java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
@@ -260,13 +259,13 @@ object TaskScanner {
                     continue
                 }
 
-                // ── time window: رفض رسائل أقدم من 7 أيام فقط ──
-                // لا يوجد شرط smsTooOld لأن المستخدم قد يدفع قبل الطلب بأيام
-                val smsExpired = date < (System.currentTimeMillis() - SMS_MAX_AGE_MS)
-                if (smsExpired) {
-                    Log.d(TAG, "Skip SMS: expired (age > 7 days, sms=$date)")
+                // ── time window: رفض رسائل أقدم من 24 ساعة — موحّد مع DB (MAX_SMS_AGE=24h) ──
+                val smsAgeMin = (System.currentTimeMillis() - date) / 60000
+                if (date < System.currentTimeMillis() - SMS_MAX_AGE_MS) {
+                    Log.d(TAG, "SCAN_SMS_EXPIRED | age=${smsAgeMin}min sender=$sender")
                     continue
                 }
+                Log.d(TAG, "SCAN_SMS_CANDIDATE | age=${smsAgeMin}min sender=$sender")
 
                 if (SmsParser.isOfficialReceivedMessage(body)) {
                     val parsed = SmsParser.parseReceived(body)
@@ -309,19 +308,20 @@ object TaskScanner {
             }
         }
 
-        // أفضل تطابق: phone + amount معاً (score 4) — هذا هو الوحيد المقبول
+        Log.i(TAG, "SCAN_INBOX_DONE | order=${task.requestId} candidates=${candidates.size}")
+
+        // أفضل تطابق: phone + amount معاً (score ≥ 4) — هذا هو الوحيد المقبول
         val best = candidates.maxByOrNull { it.score }
         if (best != null && best.amountMatch && best.phoneMatch) {
+            Log.i(TAG, "MATCH_FOUND | order=${task.requestId} source=Inbox txId=${best.transactionId} amount=${best.amount} phone=${best.senderPhone} score=${best.score}")
             return ScanResult.Success(best)
         }
 
-        // ── SECURITY: phoneOnly match (مبلغ مختلف) → amount_mismatch لا success ──
-        // السماح بإرسال success بدون تطابق المبلغ يُسبب manual_review لكل عملية مختلفة
-        // وقد يُستغل لتمرير عمليات بمبالغ غير صحيحة عبر المراجعة اليدوية
+        // SECURITY: phoneOnly match (مبلغ مختلف) → amount_mismatch لا success
         val phoneOnlyMatch = candidates.filter { it.phoneMatch && !it.amountMatch }
         if (phoneOnlyMatch.isNotEmpty()) {
             val closest = phoneOnlyMatch.maxByOrNull { it.score }!!
-            Log.d(TAG, "Phone match found but amount differs: phone=${closest.senderPhone} found=${closest.amount} expected=${task.fingerprintAmount ?: task.amountRequested} tx=${closest.transactionId} — returning AmountMismatch")
+            Log.w(TAG, "MATCH_AMOUNT_MISMATCH | order=${task.requestId} phone=${closest.senderPhone} found=${closest.amount} expected=${task.fingerprintAmount ?: task.amountRequested}")
             return ScanResult.AmountMismatch(
                 message = closest,
                 foundAmount = closest.amount ?: 0.0,
@@ -329,11 +329,11 @@ object TaskScanner {
             )
         }
 
-        if (candidates.isEmpty()) {
-            return ScanResult.NotFound("لم يتم العثور على رسائل فودافون كاش في الجهاز")
-        }
-
-        return ScanResult.NotFound("تم العثور على ${candidates.size} رسالة لكن لا توجد مطابقة تامة")
+        Log.w(TAG, "MATCH_NOT_FOUND | order=${task.requestId} vodafoneMsgs=${candidates.size}")
+        return if (candidates.isEmpty())
+            ScanResult.NotFound("لم يتم العثور على رسائل فودافون كاش في الجهاز")
+        else
+            ScanResult.NotFound("تم العثور على ${candidates.size} رسالة لكن لا توجد مطابقة تامة")
     }
 
     fun sendTaskResult(

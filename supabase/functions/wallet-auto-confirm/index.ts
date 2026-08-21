@@ -329,7 +329,7 @@ Deno.serve(async (req: Request) => {
       newly_dispatched: newlyDispatched,
       reassigned_from_offline: reassignedFromOffline,
       reopened_expired: reopenedExpired,
-      min_version_code: 53,
+      min_version_code: 54,
     });
   }
 
@@ -337,25 +337,19 @@ Deno.serve(async (req: Request) => {
   if (isTaskResult(payload)) {
     console.log(`[TRANSACTION_CHECK] task_result received | task_id=${payload.task_id} device=${payload.device_id} status=${payload.status} tx=${payload.result_data?.transaction_id ?? 'none'} amount=${payload.result_data?.amount ?? 'none'}`);
 
-    // Idempotency: check if this task_id was already completed
-    if (payload.idempotency_key) {
-      const { data: existing } = await db
-        .from('pending_tasks')
-        .select('task_status, result_status, result_data, payment_order_id, order_expires_at')
-        .eq('id', payload.task_id)
-        .single();
-      if (existing?.task_status === 'completed') {
-        console.log(`[TRANSACTION_ALREADY_USED] idempotent retry task_id=${payload.task_id} result_status=${existing.result_status}`);
-        return jsonResponse({ ok: true, idempotent: true, result_status: existing.result_status });
-      }
-    }
-
-    // ── SMS time-window check against payment_order.expires_at ──
-    const { data: taskRow } = await db
+    // Idempotency: check if this task_id was already completed — always check, not just when key present
+    const { data: existingTask } = await db
       .from('pending_tasks')
-      .select('payment_order_id, order_expires_at, amount_requested')
+      .select('task_status, result_status, result_data, payment_order_id, order_expires_at, amount_requested')
       .eq('id', payload.task_id)
       .maybeSingle();
+
+    if (existingTask?.task_status === 'completed') {
+      console.log(`[IDEMPOTENT] task already completed | task_id=${payload.task_id} result_status=${existingTask.result_status}`);
+      return jsonResponse({ ok: true, idempotent: true, result_status: existingTask.result_status, scan_status: existingTask.result_status });
+    }
+
+    const taskRow = existingTask;
 
     console.log(`[ORDER_FOUND] task_id=${payload.task_id} payment_order_id=${taskRow?.payment_order_id ?? 'none'} expires=${taskRow?.order_expires_at ?? 'none'}`);
 
