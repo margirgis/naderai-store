@@ -115,15 +115,17 @@ object WebhookSender {
     }
 
     /**
-     * إرسال نتيجة فحص SMS عبر endpoint الأدمن (لا يحتاج Webhook Secret).
+     * إرسال نتيجة فحص SMS عبر endpoint الأدمن.
      * يجب أن يحتوي body على access_token و refresh_token من AdminSession.
+     * نُمرر access_token كـ Bearer header أيضاً لأن admin-task-result يتحقق منه في الـ header.
      */
     fun sendAdminTaskResult(
         url: String,
         body: Map<String, Any>,
         onResult: (success: Boolean, message: String, responseBody: String) -> Unit
     ) {
-        // task-result endpoint يحتوي access_token في الـ body — لا نحتاج adminToken header هنا
-        sendAdminJson(url, body, adminToken = null, onResult = onResult)
+        // استخرج access_token من الـ body ومرّره كـ Bearer header
+        val accessToken = body["access_token"] as? String
+        sendAdminJson(url, body, adminToken = accessToken, onResult = onResult)
     }
 }

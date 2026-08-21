@@ -280,12 +280,26 @@ class DiagnosticsFragment : Fragment() {
             return
         }
         val secret = prefs.getString(MainActivity.KEY_SECRET, null) ?: ""
-        val payload = mapOf("action" to "ping", "device_id" to HeartbeatManager.getDeviceId(requireContext()))
-        WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { success, msg, _ ->
+        if (secret.isEmpty()) {
+            Toast.makeText(requireContext(), "❌ لا يوجد Secret مُعيَّن في الإعدادات", Toast.LENGTH_LONG).show()
+            return
+        }
+        // يجب إرسال action=test_ping وليس ping — الـ server يتحقق من القيمة الدقيقة
+        val payload = mapOf(
+            "action" to "test_ping",
+            "device_id" to HeartbeatManager.getDeviceId(requireContext())
+        )
+        WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { success, msg, responseBody ->
             activity?.runOnUiThread {
-                Toast.makeText(requireContext(),
-                    if (success) "✅ API متاح" else "❌ فشل: $msg",
-                    Toast.LENGTH_LONG).show()
+                val displayMsg = when {
+                    success -> "✅ API متصل ويعمل"
+                    responseBody.contains("401") || msg.contains("401") ->
+                        "❌ خطأ مصادقة (401) — تأكد من صحة الـ Secret في الإعدادات"
+                    responseBody.contains("Invalid secret") ->
+                        "❌ Secret غير صحيح — راجع إعدادات الـ Webhook Secret"
+                    else -> "❌ فشل: $msg"
+                }
+                Toast.makeText(requireContext(), displayMsg, Toast.LENGTH_LONG).show()
                 tvApiStatus.text = if (success) "✅ متاح" else "❌ $msg"
             }
         }

@@ -670,13 +670,12 @@ object TaskScanner {
                     )
                 }
             } else {
-                val httpCode = runCatching {
-                    responseBody.toIntOrNull() ?: msg.filter { it.isDigit() }.take(3).toIntOrNull() ?: 0
-                }.getOrDefault(0)
+                // استخرج كود HTTP من msg بدقة: "استجابة الخادم: 401" → 401
+                val httpCode = Regex("\\b([1-5]\\d{2})\\b").find(msg)?.value?.toIntOrNull() ?: 0
                 OrderEventLogger.log(
                     event = "VERIFY_RESULT",
                     orderId = reqId, orderNumber = orderNum, deviceId = null,
-                    status = "network_error",
+                    status = if (httpCode == 401) "auth_error" else "network_error",
                     details = "http=$httpCode duration_ms=$verifyDur msg=$msg"
                 )
                 OrderEventLogger.serverError(reqId, orderNum, httpCode, responseBody, msg)
