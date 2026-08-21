@@ -113,7 +113,11 @@ object AppState {
     }
 
     private fun refreshCounts(merged: List<OrderItem>) {
-        pendingCount.postValue(merged.count { it.status in setOf(OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING, OrderStatus.WAITING_CONFIRMATION) })
+        // Phase-2: SMS_FOUND + REVIEWING تُحسب ضمن "جاري المعالجة"
+        pendingCount.postValue(merged.count { it.status in setOf(
+            OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING,
+            OrderStatus.SMS_FOUND, OrderStatus.REVIEWING,
+            OrderStatus.WAITING_CONFIRMATION) })
         confirmedCount.postValue(merged.count { it.status in setOf(OrderStatus.CONFIRMED, OrderStatus.COMPLETED, OrderStatus.MATCHED) })
         failedCount.postValue(merged.count { it.status in setOf(OrderStatus.FAILED, OrderStatus.AMOUNT_MISMATCH, OrderStatus.NOT_FOUND) })
         notFoundCount.postValue(merged.count { it.status == OrderStatus.NOT_FOUND })
@@ -132,10 +136,13 @@ object AppState {
         if (current.isEmpty()) return
         // تحقق إذا كل الطلبات المرتبطة بالمهام وصلت لحالة نهائية
         val activeOrders = getOrders()
+        val activeStatuses = setOf(
+            OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING,
+            OrderStatus.SMS_FOUND, OrderStatus.REVIEWING, OrderStatus.WAITING_CONFIRMATION
+        )
         val allDone = current.all { task ->
             val order = activeOrders.firstOrNull { it.requestId == task.requestId }
-            order == null || order.status.isTerminal() ||
-                order.status !in setOf(OrderStatus.PENDING, OrderStatus.SCANNING, OrderStatus.MATCHING)
+            order == null || order.status.isTerminal() || order.status !in activeStatuses
         }
         if (allDone) {
             pendingTasks.postValue(emptyList())
@@ -218,12 +225,11 @@ object AppState {
         when (result) {
             is TaskScanner.ScanResult.Success -> {
                 lastFoundTransaction.postValue(result.message.transactionId)
-                // ── STATE: SMS وُجد — نضع WAITING_CONFIRMATION حتى يرد السيرفر ──
-                // MANUAL_REVIEW محجوزة للسيرفر فقط (sender_phone_mismatch, manual review حقيقي)
-                // لا نضع COMPLETED هنا — القرار النهائي (تأكيد أو رفض مكرر) يعود من السيرفر
+                // ── Phase-2 STATE MACHINE: scanning → sms_found → reviewing → waiting_confirmation ──
+                // 1) سجّل SMS_FOUND أولاً
                 updateOrderAfterScan(task.requestId) {
                     it.copy(
-                        status = OrderStatus.WAITING_CONFIRMATION,
+                        status = OrderStatus.SMS_FOUND,
                         transactionId = result.message.transactionId ?: it.transactionId,
                         amountFound = result.message.amount ?: it.amountFound,
                         senderPhoneFound = result.message.senderPhone ?: it.senderPhoneFound,
@@ -235,7 +241,13 @@ object AppState {
                     )
                 }
                 OrderEventLogger.matchFound(task.requestId, task.orderNumber, result.message.transactionId)
-                android.util.Log.i("AppState", "MATCH_FOUND | order=${task.requestId} tx=${result.message.transactionId} amount=${result.message.amount} → WAITING_CONFIRMATION")
+                android.util.Log.i("AppState", "SMS_FOUND | order=${task.requestId} tx=${result.message.transactionId} amount=${result.message.amount}")
+                // 2) انتقل مباشرة لـ REVIEWING (التحقق جاري في TaskScanner)
+                updateOrderAfterScan(task.requestId) { it.copy(status = OrderStatus.REVIEWING) }
+                android.util.Log.i("AppState", "REVIEWING | order=${task.requestId}")
+                // 3) WAITING_CONFIRMATION بعد اكتمال التحقق (السيرفر سيرد لاحقاً)
+                updateOrderAfterScan(task.requestId) { it.copy(status = OrderStatus.WAITING_CONFIRMATION) }
+                android.util.Log.i("AppState", "WAITING_CONFIRMATION | order=${task.requestId} → إرسال للسيرفر")
                 notifyOnce(task.requestId, OrderStatus.WAITING_CONFIRMATION) {
                     DeviceNotification(
                         title = "تم العثور على العملية — جاري التأكيد",
@@ -467,6 +479,8 @@ enum class OrderStatus(val label: String, val color: String) {
     PENDING("قيد الانتظار", "#F59E0B"),
     SCANNING("جاري الفحص", "#3B82F6"),
     MATCHING("جاري المطابقة", "#0EA5E9"),
+    SMS_FOUND("تم العثور على الرسالة", "#6366F1"),   // Phase-2: وُجدت SMS مطابقة، لم تُؤكَّد بعد
+    REVIEWING("جاري المراجعة", "#8B5CF6"),             // Phase-2: تحقق من الحقول قبل الإرسال
     MATCHED("تم العثور على تطابق", "#10B981"),
     WAITING_CONFIRMATION("بانتظار التأكيد", "#F97316"),
     CONFIRMED("تم التأكيد", "#059669"),
@@ -493,6 +507,8 @@ enum class OrderStatus(val label: String, val color: String) {
             "pending" -> PENDING
             "scanning" -> SCANNING
             "matching" -> MATCHING
+            "sms_found", "sms-found"    -> SMS_FOUND     // Phase-2
+            "reviewing"                  -> REVIEWING      // Phase-2
             "matched" -> MATCHED
             "waiting_confirmation", "waiting-confirmation" -> WAITING_CONFIRMATION
             "found", "verified" -> MATCHED

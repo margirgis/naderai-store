@@ -60,4 +60,5 @@ historical_context.txt
 /tasks/*
 !/tasks/vodafone-cash-sms-reader/
 !/tasks/naderai-app/
-/tasks
+!/tasks/Phase2_Report.md
+!/tasks/Phase1_Report.md

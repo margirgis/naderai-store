@@ -1,7 +1,6 @@
 package com.naderai.smsreader
 
 import android.content.Context
-import android.provider.Telephony
 import android.util.Log
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -186,26 +185,44 @@ object TaskScanner {
     }
 
     private fun scanInbox(context: Context, task: Task): ScanResult {
+        val traceId = "${task.taskId}-${System.currentTimeMillis()}"
+        val scanStart = System.currentTimeMillis()
+
         if (context.checkSelfPermission(android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return ScanResult.Failure("إذن قراءة الرسائل غير ممنوح")
         }
 
-        // لا يوجد فحص آمن بدون sender_phone؛ ممنوع الاعتماد على amount فقط.
-        val requestedPhone = task.senderPhoneRequested?.trim().orEmpty()
-        if (requestedPhone.isEmpty()) {
-            return ScanResult.Failure(
-                "رقم المحوّل غير موجود في بيانات الطلب — تم إيقاف الفحص"
-            )
-        }
-        val normalizedRequested = normalizeEgyptianPhone(requestedPhone)
-        if (normalizedRequested.isEmpty()) {
-            return ScanResult.Failure("رقم المحوّل في الطلب غير صالح")
-        }
+        // ── EVENT: SCAN_STARTED ──────────────────────────────────────────────
+        OrderEventLogger.log(
+            event = "SCAN_STARTED",
+            orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+            status = null,
+            details = "trace=$traceId task=${task.taskId} amount=${task.amountRequested} phone=${task.senderPhoneRequested}"
+        )
 
-        // ── P2 FIX: فحص الطابور المحلي أولاً (SMS وصلت قبل task) ────────
+        val requestedPhone       = task.senderPhoneRequested?.trim().orEmpty()
+        val normalizedRequested  = if (requestedPhone.isNotEmpty()) normalizeEgyptianPhone(requestedPhone) else ""
+        // Phase-2: إذا لم يوجد phone نستمر بـ amount-only (ليس رفض مباشر)
+        val phoneRequired        = normalizedRequested.isNotEmpty()
+
+        // ── EVENT: SMS_SEARCH_STARTED ─────────────────────────────────────────
+        OrderEventLogger.log(
+            event = "SMS_SEARCH_STARTED",
+            orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+            status = null,
+            details = "trace=$traceId phoneRequired=$phoneRequired"
+        )
+
+        // ── فحص الطابور المحلي أولاً (SMS وصلت قبل task) ────────────────────
         val queued = LocalSmsQueue.findMatch(context, task)
         if (queued != null) {
-            Log.i(TAG, "MATCH_FOUND | order=${task.requestId} source=LocalQueue txId=${queued.transactionId} amount=${queued.amount} phone=${queued.senderPhone}")
+            val dur = System.currentTimeMillis() - scanStart
+            OrderEventLogger.log(
+                event = "SMS_MATCH_FOUND",
+                orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                status = "local_queue",
+                details = "trace=$traceId source=LocalQueue txId=${queued.transactionId} amount=${queued.amount} duration_ms=$dur"
+            )
             LocalSmsQueue.remove(context, queued.transactionId)
             return ScanResult.Success(
                 ScannedMessage(
@@ -217,30 +234,27 @@ object TaskScanner {
                     body          = queued.smsBody,
                     date          = queued.receivedAt,
                     amountMatch   = true,
-                    phoneMatch    = true,
+                    phoneMatch    = phoneRequired && queued.senderPhone == normalizedRequested ||
+                                    !phoneRequired,
                     score         = 100,
                     receiverWallet = queued.receiverWallet
                 )
             )
         }
-        Log.i(TAG, "SCAN_INBOX_START | order=${task.requestId} task=${task.taskId} amount=${task.amountRequested} phone=${task.senderPhoneRequested}")
 
         val cursor = context.contentResolver.query(
-            Telephony.Sms.Inbox.CONTENT_URI,
+            android.provider.Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(
-                Telephony.Sms.ADDRESS,
-                Telephony.Sms.BODY,
-                Telephony.Sms.DATE
+                android.provider.Telephony.Sms.ADDRESS,
+                android.provider.Telephony.Sms.BODY,
+                android.provider.Telephony.Sms.DATE
             ),
-            null,
-            null,
-            Telephony.Sms.DATE + " DESC"
+            null, null,
+            android.provider.Telephony.Sms.DATE + " DESC"
         ) ?: return ScanResult.Failure("لا يمكن قراءة صندوق الرسائل")
 
-        // نافذة زمنية: 24 ساعة — متوافق مع DB (confirm_payment_order MAX_SMS_AGE=24h)
-        // مصدر واحد للحقيقة: أي SMS عمره > 24 ساعة يُرفض هنا قبل إرساله للسيرفر
-        // الحماية من إعادة الاستخدام تعتمد على transaction_id في السيرفر
-        val SMS_MAX_AGE_MS = 24L * 60 * 60 * 1000 // 24 ساعة — موحّد مع DB
+        // نافذة زمنية: 24 ساعة — موحّدة مع DB (confirm_payment_order MAX_SMS_AGE=24h)
+        val SMS_MAX_AGE_MS = 24L * 60 * 60 * 1000
         val orderCreatedMs: Long? = task.requestCreatedAt?.let {
             runCatching {
                 java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
@@ -248,96 +262,159 @@ object TaskScanner {
                     .parse(it.take(19))?.time
             }.getOrNull()
         }
+        val targetAmount = task.fingerprintAmount ?: task.amountRequested
 
         val candidates = mutableListOf<ScannedMessage>()
         cursor.use { c ->
             while (c.moveToNext()) {
-                val sender = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "unknown"
-                val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
-                val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
+                val senderAddr = c.getString(c.getColumnIndexOrThrow(android.provider.Telephony.Sms.ADDRESS)) ?: "unknown"
+                val body       = c.getString(c.getColumnIndexOrThrow(android.provider.Telephony.Sms.BODY)) ?: ""
+                val smsDate    = c.getLong(c.getColumnIndexOrThrow(android.provider.Telephony.Sms.DATE))
 
-                // ── SECURITY: فحص الـ ADDRESS أولاً قبل قراءة النص ──
-                // الرسالة لازم تيجي من شماره/اسم فودافون الرسمي
-                if (!isOfficialVodafoneSender(sender)) {
-                    Log.d(TAG, "Skip SMS from non-Vodafone sender: $sender")
+                // ── EVENT: SOURCE_VALIDATION ──────────────────────────────────
+                val senderValid = isOfficialVodafoneSender(senderAddr)
+                if (!senderValid) {
+                    Log.d(TAG, "SOURCE_VALIDATION | trace=$traceId addr=$senderAddr result=REJECT reason=invalid_sender_address")
                     continue
                 }
+                OrderEventLogger.log(
+                    event = "SOURCE_VALIDATION",
+                    orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                    status = "ok", details = "trace=$traceId addr=$senderAddr"
+                )
 
-                // ── time window: رفض رسائل أقدم من 24 ساعة — موحّد مع DB (MAX_SMS_AGE=24h) ──
-                val smsAgeMin = (System.currentTimeMillis() - date) / 60000
-                if (date < System.currentTimeMillis() - SMS_MAX_AGE_MS) {
-                    Log.d(TAG, "SCAN_SMS_EXPIRED | age=${smsAgeMin}min sender=$sender")
+                // ── EVENT: TIMESTAMP_CHECK ────────────────────────────────────
+                val smsAgeMs = System.currentTimeMillis() - smsDate
+                val windowStart = orderCreatedMs?.let { it - 60_000L } ?: (System.currentTimeMillis() - SMS_MAX_AGE_MS)
+                val timestampOk = smsDate >= windowStart && smsAgeMs <= SMS_MAX_AGE_MS
+                if (!timestampOk) {
+                    OrderEventLogger.log(
+                        event = "TIMESTAMP_CHECK",
+                        orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                        status = "REJECT", details = "trace=$traceId age_min=${smsAgeMs/60000} reason=expired"
+                    )
                     continue
                 }
-                Log.d(TAG, "SCAN_SMS_CANDIDATE | age=${smsAgeMin}min sender=$sender")
+                OrderEventLogger.log(
+                    event = "TIMESTAMP_CHECK",
+                    orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                    status = "ok", details = "trace=$traceId age_min=${smsAgeMs/60000}"
+                )
 
-                if (SmsParser.isOfficialReceivedMessage(body)) {
-                    val parsed = SmsParser.parseReceived(body)
-                    val normalizedSender = parsed.senderPhone ?: normalizeEgyptianPhone(sender)
-                    val amount = parsed.amount
+                if (!SmsParser.isOfficialReceivedMessage(body)) continue
 
-                    // المبلغ المطلوب: fingerprintAmount لو موجود، وإلا amountRequested
-                    val targetAmount = task.fingerprintAmount ?: task.amountRequested
-                    // P0 FIX: Amount must match EXACTLY to the piaster.
-                    // Round both to 2 decimal places to handle float imprecision.
-                    // Any tolerance larger than 0.004 (rounding noise only) is a security risk.
-                    val amountMatch = if (targetAmount > 0 && amount != null) {
-                        val roundedTarget = Math.round(targetAmount * 100)
-                        val roundedActual = Math.round(amount * 100)
-                        roundedTarget == roundedActual
-                    } else false
-
-                    // phoneMatch: صح لو رقم المُرسِل في SMS = الرقم المطلوب
-                    val phoneMatch = normalizedRequested.isNotEmpty() && normalizedSender == normalizedRequested
-
-                    // مطابقة الاسم كتأكيد إضافي (اختياري)
-                    val nameMatch = isNameMatch(task.senderNameRequested, parsed.senderName)
-
-                    candidates.add(ScannedMessage(
-                        sender = sender,
-                        senderPhone = normalizedSender,
-                        senderName = parsed.senderName,
-                        amount = amount,
-                        transactionId = parsed.transactionId,
-                        body = body,
-                        date = date,
-                        amountMatch = amountMatch,
-                        phoneMatch = phoneMatch,
-                        score = (if (amountMatch) 2 else 0) +
-                                (if (phoneMatch) 2 else 0) +
-                                (if (nameMatch) 1 else 0),
-                        receiverWallet = parsed.receiverWallet
-                    ))
+                // ── Parse باستخدام ParseResult الموحّد ───────────────────────
+                val parsed = SmsParser.parse(body, originatingAddress = senderAddr, smsDateMs = smsDate)
+                if (!parsed.success) {
+                    Log.w(TAG, "SMS_PARSE_FAILED | trace=$traceId reason=${parsed.reason} addr=$senderAddr")
+                    OrderEventLogger.log(
+                        event = "SMS_PARSE_FAILED",
+                        orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                        status = parsed.reason, details = "trace=$traceId addr=$senderAddr"
+                    )
+                    continue
                 }
+                OrderEventLogger.log(
+                    event = "SMS_PARSE_SUCCESS",
+                    orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                    status = "ok",
+                    details = "trace=$traceId tx=${parsed.transactionId} amount=${parsed.amount} phone=${parsed.senderPhone}"
+                )
+
+                // ── EVENT: AMOUNT_CHECK ───────────────────────────────────────
+                val amountMatch = parsed.amount != null && targetAmount > 0 &&
+                    Math.round(targetAmount * 100) == Math.round(parsed.amount * 100)
+                OrderEventLogger.log(
+                    event = "AMOUNT_CHECK",
+                    orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                    status = if (amountMatch) "ok" else "MISMATCH",
+                    details = "trace=$traceId expected=$targetAmount found=${parsed.amount}"
+                )
+
+                // ── EVENT: SENDER_CHECK ───────────────────────────────────────
+                val normalizedSenderInSms = parsed.senderPhone ?: normalizeEgyptianPhone(senderAddr)
+                val phoneMatch = if (phoneRequired) normalizedSenderInSms == normalizedRequested else true
+                OrderEventLogger.log(
+                    event = "SENDER_CHECK",
+                    orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                    status = if (phoneMatch) "ok" else "MISMATCH",
+                    details = "trace=$traceId expected=$normalizedRequested found=$normalizedSenderInSms phoneRequired=$phoneRequired"
+                )
+
+                // ── EVENT: WALLET_CHECK ───────────────────────────────────────
+                val walletMatch = !parsed.receiverWallet.isNullOrEmpty() // configured wallet checked server-side
+                OrderEventLogger.log(
+                    event = "WALLET_CHECK",
+                    orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                    status = if (walletMatch) "ok" else "MISSING",
+                    details = "trace=$traceId wallet=${parsed.receiverWallet}"
+                )
+
+                val nameMatch = isNameMatch(task.senderNameRequested, parsed.senderName)
+                val score = (if (amountMatch) 2 else 0) +
+                            (if (phoneMatch && phoneRequired) 2 else if (!phoneRequired && amountMatch) 1 else 0) +
+                            (if (nameMatch) 1 else 0) +
+                            (if (walletMatch) 1 else 0)
+
+                candidates.add(ScannedMessage(
+                    sender         = senderAddr,
+                    senderPhone    = normalizedSenderInSms,
+                    senderName     = parsed.senderName,
+                    amount         = parsed.amount,
+                    transactionId  = parsed.transactionId,
+                    body           = body,
+                    date           = smsDate,
+                    amountMatch    = amountMatch,
+                    phoneMatch     = phoneMatch,
+                    score          = score,
+                    receiverWallet = parsed.receiverWallet
+                ))
             }
         }
 
-        Log.i(TAG, "SCAN_INBOX_DONE | order=${task.requestId} candidates=${candidates.size}")
+        Log.i(TAG, "SCAN_INBOX_DONE | trace=$traceId order=${task.requestId} candidates=${candidates.size}")
 
-        // أفضل تطابق: phone + amount معاً (score ≥ 4) — هذا هو الوحيد المقبول
+        // ── أفضل تطابق ────────────────────────────────────────────────────────
+        // phone + amount معاً هو الوضع المثالي
+        // إذا لا يوجد phone في الطلب: amount وحده كافٍ (مع SOURCE_VALIDATION إلزامي)
         val best = candidates.maxByOrNull { it.score }
-        if (best != null && best.amountMatch && best.phoneMatch) {
-            Log.i(TAG, "MATCH_FOUND | order=${task.requestId} source=Inbox txId=${best.transactionId} amount=${best.amount} phone=${best.senderPhone} score=${best.score}")
+
+        val fullMatch   = best != null && best.amountMatch && (best.phoneMatch || !phoneRequired)
+        val phoneOnlyM  = candidates.filter { it.phoneMatch && !it.amountMatch }
+
+        if (fullMatch) {
+            val dur = System.currentTimeMillis() - scanStart
+            OrderEventLogger.log(
+                event = "SMS_MATCH_FOUND",
+                orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                status = "ok",
+                details = "trace=$traceId source=Inbox txId=${best!!.transactionId} amount=${best.amount} phone=${best.senderPhone} score=${best.score} duration_ms=$dur"
+            )
             return ScanResult.Success(best)
         }
 
-        // SECURITY: phoneOnly match (مبلغ مختلف) → amount_mismatch لا success
-        val phoneOnlyMatch = candidates.filter { it.phoneMatch && !it.amountMatch }
-        if (phoneOnlyMatch.isNotEmpty()) {
-            val closest = phoneOnlyMatch.maxByOrNull { it.score }!!
-            Log.w(TAG, "MATCH_AMOUNT_MISMATCH | order=${task.requestId} phone=${closest.senderPhone} found=${closest.amount} expected=${task.fingerprintAmount ?: task.amountRequested}")
+        if (phoneOnlyM.isNotEmpty()) {
+            val closest = phoneOnlyM.maxByOrNull { it.score }!!
+            Log.w(TAG, "MATCH_AMOUNT_MISMATCH | trace=$traceId order=${task.requestId} phone=${closest.senderPhone} found=${closest.amount} expected=$targetAmount")
+            OrderEventLogger.log(
+                event = "AMOUNT_CHECK",
+                orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                status = "amount_mismatch",
+                details = "trace=$traceId found=${closest.amount} expected=$targetAmount"
+            )
             return ScanResult.AmountMismatch(
                 message = closest,
                 foundAmount = closest.amount ?: 0.0,
-                expectedAmount = task.fingerprintAmount ?: task.amountRequested
+                expectedAmount = targetAmount
             )
         }
 
-        Log.w(TAG, "MATCH_NOT_FOUND | order=${task.requestId} vodafoneMsgs=${candidates.size}")
+        val dur = System.currentTimeMillis() - scanStart
+        Log.w(TAG, "MATCH_NOT_FOUND | trace=$traceId order=${task.requestId} candidates=${candidates.size} duration_ms=$dur")
         return if (candidates.isEmpty())
-            ScanResult.NotFound("لم يتم العثور على رسائل فودافون كاش في الجهاز")
+            ScanResult.NotFound("not_found: لم يتم العثور على رسائل فودافون كاش في الجهاز")
         else
-            ScanResult.NotFound("تم العثور على ${candidates.size} رسالة لكن لا توجد مطابقة تامة")
+            ScanResult.NotFound("not_found: ${candidates.size} رسالة بدون مطابقة تامة")
     }
 
     fun sendTaskResult(
@@ -508,9 +585,27 @@ object TaskScanner {
         if (!task.paymentOrderId.isNullOrEmpty()) body["payment_order_id"] = task.paymentOrderId
         if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
 
+        // ── EVENT: DUPLICATE_CHECK (قبل الإرسال) ───────────────────────
+        val txIdForDuplicateCheck = (result as? ScanResult.Success)?.message?.transactionId
+        val verifyStart = System.currentTimeMillis()
+        OrderEventLogger.log(
+            event = "DUPLICATE_CHECK",
+            orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+            status = if (txIdForDuplicateCheck != null) "pending" else "no_tx_id",
+            details = "txId=$txIdForDuplicateCheck — server will authoritative-check"
+        )
+
+        // ── EVENT: VERIFY_SUBMITTED ─────────────────────────────────────
+        OrderEventLogger.log(
+            event = "VERIFY_SUBMITTED",
+            orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+            status = resultStatus,
+            details = "taskId=${task.taskId} idempotencyKey=$idempotencyKey txId=$txIdForDuplicateCheck"
+        )
+
         WebhookSender.sendAdminTaskResult(adminUrl, body) { success, msg, responseBody ->
+            val verifyDur = System.currentTimeMillis() - verifyStart
             Log.d(TAG, "Admin task result sent: $success — $msg responseBody=${responseBody.take(200)}")
-            // ── حقن في سجل المراقبة ─────────────────────────────────────
             val orderNum = task.orderNumber
             val reqId    = task.requestId
             if (success) {
@@ -521,7 +616,25 @@ object TaskScanner {
                         if (serverOk) "confirmed" else "rejected"
                     }
                     Log.d(TAG, "[SERVER_DECISION] task=${task.taskId} scan_status=$serverScanStatus ok=$serverOk")
-                    // سجل مراقبة: سيرفر قبل أو رفض
+
+                    // ── EVENT: VERIFY_RESULT ──────────────────────────────
+                    OrderEventLogger.log(
+                        event = "VERIFY_RESULT",
+                        orderId = reqId, orderNumber = orderNum, deviceId = null,
+                        status = serverScanStatus,
+                        details = "ok=$serverOk duration_ms=$verifyDur txId=$txIdForDuplicateCheck"
+                    )
+
+                    // ── EVENT: DUPLICATE_CHECK نتيجة ─────────────────────
+                    if (serverScanStatus == "duplicate") {
+                        OrderEventLogger.log(
+                            event = "DUPLICATE_CHECK",
+                            orderId = reqId, orderNumber = orderNum, deviceId = null,
+                            status = "DUPLICATE",
+                            details = "txId=$txIdForDuplicateCheck — رُفض من السيرفر"
+                        )
+                    }
+
                     if (serverOk) {
                         OrderEventLogger.serverSuccess(reqId, orderNum, 200, responseBody)
                     } else {
@@ -534,7 +647,6 @@ object TaskScanner {
                         )
                     }
                     onServerResponse?.invoke(serverScanStatus, serverOk)
-                    // تحديث الـ tokens لو السيرفر أعاد tokens مجددة
                     val tokens = obj.optJSONObject("tokens")
                     if (tokens != null) {
                         val newAccess  = tokens.optString("access_token")
@@ -546,6 +658,11 @@ object TaskScanner {
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to parse server response: ${e.message}")
+                    OrderEventLogger.log(
+                        event = "VERIFY_RESULT",
+                        orderId = reqId, orderNumber = orderNum, deviceId = null,
+                        status = "parse_error", details = "duration_ms=$verifyDur err=${e.message}"
+                    )
                     OrderDiagnosticsLog.log(
                         OrderDiagnosticsLog.EventType.GENERIC_ERROR,
                         orderNum, reqId, task.taskId,
@@ -553,10 +670,15 @@ object TaskScanner {
                     )
                 }
             } else {
-                // فشل الإرسال — حدد السبب
                 val httpCode = runCatching {
                     responseBody.toIntOrNull() ?: msg.filter { it.isDigit() }.take(3).toIntOrNull() ?: 0
                 }.getOrDefault(0)
+                OrderEventLogger.log(
+                    event = "VERIFY_RESULT",
+                    orderId = reqId, orderNumber = orderNum, deviceId = null,
+                    status = "network_error",
+                    details = "http=$httpCode duration_ms=$verifyDur msg=$msg"
+                )
                 OrderEventLogger.serverError(reqId, orderNum, httpCode, responseBody, msg)
             }
             if (notifyUi) taskResultCallback?.invoke(task, result)
@@ -679,16 +801,16 @@ object TaskScanner {
         }
         val results = mutableListOf<ParsedSms>()
         val cursor = context.contentResolver.query(
-            Telephony.Sms.Inbox.CONTENT_URI,
-            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            android.provider.Telephony.Sms.Inbox.CONTENT_URI,
+            arrayOf(android.provider.Telephony.Sms.ADDRESS, android.provider.Telephony.Sms.BODY, android.provider.Telephony.Sms.DATE),
             null, null,
-            Telephony.Sms.DATE + " DESC LIMIT 50"
+            android.provider.Telephony.Sms.DATE + " DESC LIMIT 50"
         ) ?: return emptyList()
         cursor.use { c ->
             while (c.moveToNext()) {
-                val address = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: ""
-                val body = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
-                val date = c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE))
+                val address = c.getString(c.getColumnIndexOrThrow(android.provider.Telephony.Sms.ADDRESS)) ?: ""
+                val body = c.getString(c.getColumnIndexOrThrow(android.provider.Telephony.Sms.BODY)) ?: ""
+                val date = c.getLong(c.getColumnIndexOrThrow(android.provider.Telephony.Sms.DATE))
                 // نفس شرط الـ sender الرسمي كما في مسار الطلب الحقيقي
                 if (!isOfficialVodafoneSender(address)) {
                     Log.d(TAG, "[TestInbox] Skip non-Vodafone sender: $address")
