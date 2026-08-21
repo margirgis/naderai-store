@@ -77,28 +77,37 @@ object WebhookSender {
         }
     }
 
+    /**
+     * إرسال طلب للـ admin endpoints.
+     * إذا تم تمرير adminToken يُستخدم كـ Bearer token بدلاً من ANON_KEY
+     * (مطلوب لـ admin-manual-confirm الذي يستخدم requireAdmin).
+     */
     fun sendAdminJson(
         url: String,
         body: Map<String, Any>,
+        adminToken: String? = null,
         onResult: (success: Boolean, message: String, responseBody: String) -> Unit
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             val json = JSONObject(body).toString()
+            val authToken = if (!adminToken.isNullOrEmpty()) adminToken else ANON_KEY
             val request = Request.Builder()
                 .url(url)
-                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .addHeader("Authorization", "Bearer $authToken")
                 .addHeader("Content-Type", "application/json")
                 .post(json.toRequestBody(jsonMediaType))
                 .build()
 
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
+                    android.util.Log.e("WebhookSender", "sendAdminJson FAILED url=$url: ${e.message}")
                     onResult(false, "فشل الإرسال: ${e.message}", "")
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     val responseBody = response.body?.string() ?: ""
                     val success = response.isSuccessful && responseBody.contains("\"ok\":true")
+                    android.util.Log.d("WebhookSender", "sendAdminJson $url HTTP ${response.code} ok=$success")
                     onResult(success, if (success) "تم" else "استجابة الخادم: ${response.code}", responseBody)
                 }
             })
@@ -114,6 +123,7 @@ object WebhookSender {
         body: Map<String, Any>,
         onResult: (success: Boolean, message: String, responseBody: String) -> Unit
     ) {
-        sendAdminJson(url, body, onResult)
+        // task-result endpoint يحتوي access_token في الـ body — لا نحتاج adminToken header هنا
+        sendAdminJson(url, body, adminToken = null, onResult = onResult)
     }
 }

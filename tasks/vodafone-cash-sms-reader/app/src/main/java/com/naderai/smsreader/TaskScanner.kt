@@ -505,19 +505,31 @@ object TaskScanner {
         if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
 
         WebhookSender.sendAdminTaskResult(adminUrl, body) { success, msg, responseBody ->
-            Log.d(TAG, "Admin task result sent: $success — $msg")
+            Log.d(TAG, "Admin task result sent: $success — $msg responseBody=${responseBody.take(200)}")
+            // ── حقن في سجل المراقبة ─────────────────────────────────────
+            val orderNum = task.orderNumber
+            val reqId    = task.requestId
             if (success) {
                 try {
                     val obj = org.json.JSONObject(responseBody)
-                    // ── P0 FIX: قراءة scan_status من رد السيرفر ─────────────
-                    // السيرفر يرجع: { ok: bool, scan_status: "confirmed"|"duplicate"|"rejected"|... }
                     val serverOk         = obj.optBoolean("ok", false)
                     val serverScanStatus = obj.optString("scan_status", "").ifEmpty {
                         if (serverOk) "confirmed" else "rejected"
                     }
                     Log.d(TAG, "[SERVER_DECISION] task=${task.taskId} scan_status=$serverScanStatus ok=$serverOk")
+                    // سجل مراقبة: سيرفر قبل أو رفض
+                    if (serverOk) {
+                        OrderEventLogger.serverSuccess(reqId, orderNum, 200, responseBody)
+                    } else {
+                        OrderEventLogger.orderRejected(reqId, orderNum, serverScanStatus)
+                        OrderDiagnosticsLog.log(
+                            OrderDiagnosticsLog.EventType.SERVER_RESPONSE_FAIL,
+                            orderNum, reqId, task.taskId,
+                            details = "scan_status=$serverScanStatus",
+                            serverCode = 200, serverResponse = responseBody
+                        )
+                    }
                     onServerResponse?.invoke(serverScanStatus, serverOk)
-
                     // تحديث الـ tokens لو السيرفر أعاد tokens مجددة
                     val tokens = obj.optJSONObject("tokens")
                     if (tokens != null) {
@@ -530,7 +542,18 @@ object TaskScanner {
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to parse server response: ${e.message}")
+                    OrderDiagnosticsLog.log(
+                        OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                        orderNum, reqId, task.taskId,
+                        details = "parse error: ${e.message}", serverResponse = responseBody
+                    )
                 }
+            } else {
+                // فشل الإرسال — حدد السبب
+                val httpCode = runCatching {
+                    responseBody.toIntOrNull() ?: msg.filter { it.isDigit() }.take(3).toIntOrNull() ?: 0
+                }.getOrDefault(0)
+                OrderEventLogger.serverError(reqId, orderNum, httpCode, responseBody, msg)
             }
             if (notifyUi) taskResultCallback?.invoke(task, result)
             onSent?.invoke(success)

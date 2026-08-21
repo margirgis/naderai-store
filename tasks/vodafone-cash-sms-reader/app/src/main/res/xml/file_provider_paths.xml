@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- ملفات التشخيص المُصدَّرة: getExternalFilesDir("diagnostics") -->
+    <external-files-path name="diagnostics" path="diagnostics/" />
+    <!-- fallback: getFilesDir() إذا لم يكن الـ external storage متاحاً -->
+    <files-path name="diagnostics_internal" path="." />
+</paths>

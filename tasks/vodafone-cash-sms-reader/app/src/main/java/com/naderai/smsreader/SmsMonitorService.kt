@@ -102,20 +102,23 @@ class SmsMonitorService : Service() {
         private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
             val cached = TaskResultCache.get(context, task.taskId)
             if (cached != null) {
+                OrderEventLogger.scanFromCache(task.requestId, task.orderNumber, task.taskId)
                 applyCachedStatus(task.requestId, cached)
                 resendCachedResult(context, task, cached, webhookUrl, secret)
                 return
             }
 
-            // ── نافذة انتهاء الصلاحية ─────────
-            // القاعدة: إذا انتهت صلاحية الطلب (orderExpiresAt) → نرفض فوراً.
-            // لا توجد "grace period" إضافية — الـ expiry هو expiry.
             if (!task.orderExpiresAt.isNullOrEmpty()) {
                 try {
                     val expiresMs = java.time.Instant.parse(task.orderExpiresAt).toEpochMilli()
                     if (System.currentTimeMillis() > expiresMs) {
                         android.util.Log.w("SmsMonitorService",
                             "ORDER_EXPIRED | order=${task.requestId} task=${task.taskId} expires=${task.orderExpiresAt}")
+                        OrderDiagnosticsLog.log(
+                            OrderDiagnosticsLog.EventType.ORDER_SKIPPED,
+                            task.orderNumber, task.requestId, task.taskId,
+                            details = "انتهت صلاحية الطلب expires=${task.orderExpiresAt}"
+                        )
                         TaskScanner.sendTaskResult(
                             context = context,
                             task = task,
@@ -131,18 +134,27 @@ class SmsMonitorService : Service() {
                 }
             }
 
-            // تأكيد بداية الفحص في الـ UI
+            if (TaskScanner.isScanning(task.taskId)) {
+                OrderEventLogger.scanLocked(task.requestId, task.orderNumber, task.taskId)
+                return
+            }
+
             AppState.updateOrderScanProgress(task.requestId, 1, TaskScanner.MAX_SCAN_ATTEMPTS, 0)
             OrderEventLogger.scanStarted(task.requestId, task.orderNumber, task.taskId)
             TaskScanner.scanAndReport(context, task, webhookUrl, secret) { result, success ->
                 TaskResultCache.put(context, task.taskId, result)
-                if (!success) {
-                    TaskResultCache.incrementRetry(context, task.taskId)
+                if (!success) TaskResultCache.incrementRetry(context, task.taskId)
+                // سجل نتيجة الفحص في المراقبة
+                when (result) {
+                    is TaskScanner.ScanResult.Success ->
+                        OrderEventLogger.matchFound(task.requestId, task.orderNumber, result.message.transactionId)
+                    is TaskScanner.ScanResult.NotFound ->
+                        OrderEventLogger.scanNotFound(task.requestId, task.orderNumber, task.taskId, result.reason)
+                    is TaskScanner.ScanResult.AmountMismatch ->
+                        OrderEventLogger.scanAmountMismatch(task.requestId, task.orderNumber, task.taskId, result.foundAmount, result.expectedAmount)
+                    is TaskScanner.ScanResult.Failure ->
+                        OrderEventLogger.scanFailed(task.requestId, task.orderNumber, task.taskId, result.reason)
                 }
-                // ── P0 FIX: قراءة رد السيرفر لتحديد الحالة النهائية ────────────
-                // sendAdminTaskResult يُعيد responseBody — نقرأه في TaskScanner.taskResultCallback
-                // لكن scanAndReport يستدعي sendTaskResult داخلياً مع onSent فقط.
-                // الحل: نستعمل TaskScanner.taskResultCallback لتحديث الحالة المحلية بعد رد السيرفر.
             }
         }
 
@@ -190,6 +202,7 @@ class SmsMonitorService : Service() {
                 return
             }
             android.util.Log.d("SmsMonitorService", "Received ${tasks.size} pending tasks, starting scan")
+            OrderDiagnosticsLog.log(OrderDiagnosticsLog.EventType.SYNC_TASKS, details = "count=${tasks.size}")
             AppState.pendingTasks.postValue(tasks)
 
             TaskScanner.taskResultCallback = { task, result ->
@@ -197,20 +210,31 @@ class SmsMonitorService : Service() {
             }
 
             tasks.forEach { task ->
-                // حماية مزدوجة: تحقق من الحالة النهائية في AppState
+                // ✅ FIX: حماية دقيقة — نتجاهل فقط ما أُكِّد فعلاً محلياً
+                // السيرفر يُرسل pending_tasks فقط للطلبات غير المؤكدة → نثق بالسيرفر
                 val existingStatus = AppState.getOrders()
                     .firstOrNull { it.requestId == task.requestId }?.status
-                if (existingStatus?.isTerminal() == true) {
+                if (existingStatus in setOf(OrderStatus.COMPLETED, OrderStatus.CONFIRMED)) {
                     android.util.Log.d("SmsMonitorService",
-                        "handlePendingTasks: skipping terminal order ${task.requestId} (${existingStatus.name})")
+                        "handlePendingTasks: skipping confirmed order ${task.requestId}")
                     return@forEach
+                }
+                // إذا كانت الحالة terminal قديمة (EXPIRED/DUPLICATE/FAILED) والسيرفر أعاد إرسالها
+                // → امسح الكاش القديم واسمح بالفحص من جديد
+                if (existingStatus != null && existingStatus.isTerminal()) {
+                    android.util.Log.i("SmsMonitorService",
+                        "handlePendingTasks: server re-dispatched ${task.requestId} (${existingStatus.name}) — resetting")
+                    AppState.updateOrderStatus(task.requestId, OrderStatus.PENDING)
+                    TaskResultCache.remove(context, task.taskId)
+                    TaskScanner.clearScanLock(task.taskId)
                 }
                 // السماح بإعادة الفحص لـ PENDING و SCANNING و MANUAL_REVIEW و NOT_FOUND
                 val allowScan = existingStatus == null ||
-                    existingStatus == OrderStatus.PENDING ||
-                    existingStatus == OrderStatus.SCANNING ||
-                    existingStatus == OrderStatus.MANUAL_REVIEW ||
-                    existingStatus == OrderStatus.NOT_FOUND
+                    existingStatus in setOf(
+                        OrderStatus.PENDING, OrderStatus.SCANNING,
+                        OrderStatus.MANUAL_REVIEW, OrderStatus.NOT_FOUND,
+                        OrderStatus.EXPIRED, OrderStatus.DUPLICATE, OrderStatus.FAILED
+                    )
                 if (!allowScan) {
                     android.util.Log.d("SmsMonitorService",
                         "handlePendingTasks: status=${existingStatus?.name} not scannable — skipping")

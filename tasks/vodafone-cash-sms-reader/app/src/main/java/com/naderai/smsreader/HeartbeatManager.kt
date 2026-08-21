@@ -283,16 +283,31 @@ class HeartbeatManager(
                 val taskId = obj.getString("task_id")
 
                 // ══════════════════════════════════════════════════════════════
-                // حماية الحالات النهائية: لا نعيد فتح طلب منتهي أو فاشل.
+                // حماية الحالات النهائية الحقيقية فقط (من السيرفر):
+                // إذا السيرفر أرسل هذا الطلب ضمن pending_tasks فهو بالتعريف لم يُؤكَّد بعد.
+                // COMPLETED/CONFIRMED: لا نُعيد فحصها (آمنة).
+                // EXPIRED/CANCELLED/DUPLICATE: السيرفر يُرسلها كـ pending فقط إذا تم إعادة فتحها.
+                // → نتجاهل فقط COMPLETED و CONFIRMED المحلية لتجنب double-scan.
                 // ══════════════════════════════════════════════════════════════
                 val existingOrder = AppState.getOrders().firstOrNull { it.requestId == requestId }
-                if (existingOrder != null && existingOrder.status.isTerminal()) {
+                val locallyConfirmed = existingOrder?.status in setOf(
+                    OrderStatus.COMPLETED, OrderStatus.CONFIRMED
+                )
+                if (locallyConfirmed) {
                     android.util.Log.d("HeartbeatManager",
-                        "Skipping terminal order $requestId (status=${existingOrder.status.name})")
-                    OrderEventLogger.terminalIgnored(requestId, existingOrder.orderNumber, existingOrder.status.name)
+                        "Skipping already-confirmed order $requestId (status=${existingOrder?.status?.name})")
+                    OrderEventLogger.terminalIgnored(requestId, existingOrder?.orderNumber, existingOrder?.status?.name ?: "")
                     continue
                 }
-                // لا نعيد فتح الطلبات الفاشلة/غير المكتملة تلقائياً — يدوي فقط
+                // الطلبات بأي حالة أخرى (EXPIRED/DUPLICATE/FAILED محلياً) → السيرفر يعيد إرسالها
+                // فنمسح الحالة القديمة ونتعامل معها كـ pending جديدة
+                if (existingOrder != null && existingOrder.status.isTerminal()) {
+                    android.util.Log.i("HeartbeatManager",
+                        "Server re-dispatched terminal order $requestId (${existingOrder.status.name}) — resetting to PENDING")
+                    AppState.updateOrderStatus(requestId, OrderStatus.PENDING)
+                    TaskResultCache.remove(context, taskId)
+                    TaskScanner.clearScanLock(taskId)
+                }
 
 
                 if (!seenTaskIds.add(taskId)) {
@@ -375,7 +390,10 @@ class HeartbeatManager(
                     ))
                 }
             }
-            if (tasks.isNotEmpty()) onPendingTasks(tasks)
+            if (tasks.isNotEmpty()) {
+                OrderEventLogger.heartbeatTasks(tasks.size)
+                onPendingTasks(tasks)
+            }
         } catch (e: Exception) {
             android.util.Log.e("HeartbeatManager", "Failed to parse heartbeat response: ${e.message}")
         }

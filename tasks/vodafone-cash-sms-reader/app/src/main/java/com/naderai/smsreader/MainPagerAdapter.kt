@@ -21,6 +21,7 @@ class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activi
         "منتهي" to OrdersFragment.newInstance(listOf(OrderStatus.EXPIRED, OrderStatus.DUPLICATE)),
         "فشل" to OrdersFragment.newInstance(OrderStatus.FAILED),
         "تشخيص" to DiagnosticsFragment(),
+        "مراقبة 🔬" to OrderMonitorFragment(),
         "الإعدادات" to SettingsFragment()
     )
 

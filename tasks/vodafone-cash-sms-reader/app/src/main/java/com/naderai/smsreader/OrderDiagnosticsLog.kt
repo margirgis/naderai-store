@@ -1,0 +1,177 @@
+package com.naderai.smsreader
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+import java.util.concurrent.CopyOnWriteArrayList
+
+/**
+ * سجل تشخيصي مركزي — يتتبع كل حدث يمر بالطلب من لحظة وصوله حتى الرد النهائي.
+ * thread-safe (CopyOnWriteArrayList)
+ * الحد الأقصى 500 حدث في الذاكرة — يُدار تلقائياً.
+ */
+object OrderDiagnosticsLog {
+
+    // نوع الحدث
+    enum class EventType(val label: String, val emoji: String) {
+        // دورة حياة الطلب
+        ORDER_RECEIVED("وصل للجهاز", "📥"),
+        ORDER_SKIPPED("تم تجاهله", "⏭"),
+        ORDER_RESET("أُعيد تعيينه", "🔄"),
+        SCAN_STARTED("بدأ الفحص", "🔍"),
+        SCAN_CACHED("من الكاش", "💾"),
+        SCAN_LOCKED("مقفل — فحص آخر جارٍ", "🔒"),
+        SMS_MATCH_FOUND("تطابق وُجد", "✅"),
+        SMS_NOT_FOUND("لم يُوجد تطابق", "❌"),
+        SMS_AMOUNT_MISMATCH("مبلغ غير مطابق", "⚠️"),
+        SMS_SCAN_FAILED("فشل الفحص", "💥"),
+        // إرسال للسيرفر
+        SERVER_SEND_START("إرسال للسيرفر", "📤"),
+        SERVER_RESPONSE_OK("سيرفر: قبول", "🟢"),
+        SERVER_RESPONSE_FAIL("سيرفر: رفض", "🔴"),
+        SERVER_RESPONSE_ERROR("سيرفر: خطأ", "🚨"),
+        // تأكيد يدوي
+        MANUAL_CONFIRM_START("تأكيد يدوي", "🖐"),
+        MANUAL_CONFIRM_OK("تأكيد يدوي ✓", "🟢"),
+        MANUAL_CONFIRM_FAIL("تأكيد يدوي ✗", "🔴"),
+        // حالة النظام
+        HEARTBEAT_TASKS("مهام من heartbeat", "💓"),
+        SYNC_TASKS("مهام من sync", "🔃"),
+        TERMINAL_IGNORED("تجاهل terminal قديم", "🚫"),
+        AUTH_ERROR("خطأ مصادقة", "🔑"),
+        NETWORK_ERROR("خطأ شبكة", "📡"),
+        CONSTRAINT_ERROR("خطأ قاعدة البيانات", "🗃"),
+        GENERIC_ERROR("خطأ عام", "❗"),
+    }
+
+    data class LogEntry(
+        val id: Long,                         // رقم تسلسلي
+        val ts: Long,                         // timestamp millis
+        val type: EventType,
+        val orderNumber: Long?,               // رقم الطلب المرئي
+        val requestId: String?,               // UUID الطلب
+        val taskId: String?,
+        val details: String?,                 // تفاصيل حرة
+        val serverCode: Int?,                 // HTTP code إذا متاح
+        val serverResponse: String?,          // أول 300 حرف من رد السيرفر
+    ) {
+        val tsFormatted: String
+            get() {
+                val sdf = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+                return sdf.format(Date(ts))
+            }
+
+        fun toJson(): JSONObject = JSONObject().apply {
+            put("id", id)
+            put("ts", ts)
+            put("ts_fmt", tsFormatted)
+            put("type", type.name)
+            put("type_label", type.label)
+            put("order_number", orderNumber ?: JSONObject.NULL)
+            put("request_id", requestId ?: JSONObject.NULL)
+            put("task_id", taskId ?: JSONObject.NULL)
+            put("details", details ?: JSONObject.NULL)
+            put("server_code", serverCode ?: JSONObject.NULL)
+            put("server_response", serverResponse ?: JSONObject.NULL)
+        }
+
+        fun toText(): String = buildString {
+            append("[${tsFormatted}] ${type.emoji} ${type.label}")
+            if (orderNumber != null) append(" | طلب#$orderNumber")
+            if (!requestId.isNullOrEmpty()) append(" | req=${requestId.take(8)}")
+            if (!taskId.isNullOrEmpty()) append(" | task=${taskId.take(8)}")
+            if (!details.isNullOrEmpty()) append(" | $details")
+            if (serverCode != null) append(" | HTTP=$serverCode")
+            if (!serverResponse.isNullOrEmpty()) append(" | resp=${serverResponse.take(200)}")
+        }
+    }
+
+    private val entries = CopyOnWriteArrayList<LogEntry>()
+    private val MAX_ENTRIES = 500
+    private var idCounter = 0L
+
+    // LiveData للمراقبة الفورية من الـ UI
+    val liveEntries = androidx.lifecycle.MutableLiveData<List<LogEntry>>(emptyList())
+
+    @Synchronized
+    fun log(
+        type: EventType,
+        orderNumber: Long? = null,
+        requestId: String? = null,
+        taskId: String? = null,
+        details: String? = null,
+        serverCode: Int? = null,
+        serverResponse: String? = null,
+    ) {
+        val entry = LogEntry(
+            id = ++idCounter,
+            ts = System.currentTimeMillis(),
+            type = type,
+            orderNumber = orderNumber,
+            requestId = requestId,
+            taskId = taskId,
+            details = details,
+            serverCode = serverCode,
+            serverResponse = serverResponse?.take(300),
+        )
+        entries.add(0, entry) // أحدث أولاً
+        if (entries.size > MAX_ENTRIES) {
+            // احذف الإدخالات الأقدم
+            while (entries.size > MAX_ENTRIES) entries.removeAt(entries.size - 1)
+        }
+        android.util.Log.d("DiagLog", entry.toText())
+        liveEntries.postValue(entries.toList())
+    }
+
+    fun getAll(): List<LogEntry> = entries.toList()
+
+    fun getForOrder(requestId: String): List<LogEntry> =
+        entries.filter { it.requestId == requestId }
+
+    fun getRecent(n: Int = 100): List<LogEntry> = entries.take(n)
+
+    fun clear() {
+        entries.clear()
+        liveEntries.postValue(emptyList())
+    }
+
+    /** تصدير كل السجل كـ JSON */
+    fun exportJson(): String {
+        val arr = JSONArray()
+        entries.forEach { arr.put(it.toJson()) }
+        return JSONObject().apply {
+            put("exported_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.format(Date()))
+            put("entry_count", entries.size)
+            put("entries", arr)
+        }.toString(2)
+    }
+
+    /** تصدير كـ نص قابل للقراءة */
+    fun exportText(): String = buildString {
+        appendLine("=== سجل التشخيصات — ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())} ===")
+        appendLine("إجمالي الأحداث: ${entries.size}")
+        appendLine("=".repeat(70))
+        entries.forEach { appendLine(it.toText()) }
+    }
+
+    /** حفظ إلى ملف خارجي ويُرجع المسار */
+    fun saveToFile(context: Context, format: String = "json"): File? {
+        return try {
+            val dir = context.getExternalFilesDir("diagnostics") ?: context.filesDir
+            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val file = File(dir, "diag_$ts.$format")
+            val content = if (format == "json") exportJson() else exportText()
+            file.writeText(content, Charsets.UTF_8)
+            android.util.Log.i("DiagLog", "Saved diagnostics to ${file.absolutePath}")
+            file
+        } catch (e: Exception) {
+            android.util.Log.e("DiagLog", "Failed to save diagnostics: ${e.message}")
+            null
+        }
+    }
+}
