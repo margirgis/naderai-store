@@ -4,6 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -161,9 +165,16 @@ object AdminSession {
      * مُستقل عن WebhookSender لمنع circular dependency.
      */
     private fun refreshSession(context: Context, refreshToken: String, onResult: (token: String?, expired: Boolean) -> Unit) {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
-                val supabaseUrl = SupabaseConfig.supabaseUrl.trimEnd('/')
+                // جلب supabase URL من SharedPreferences (نفس المصدر المُخزَّن عند تسجيل الدخول)
+                val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+                val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
+                val supabaseUrl = rawUrl?.substringBefore("/functions")?.trimEnd('/') ?: run {
+                    android.util.Log.w(TAG, "refreshSession: no supabase URL configured — cannot refresh")
+                    onResult(null, true)
+                    return@launch
+                }
                 val anonKey = WebhookSender.ANON_KEY
                 val url = "$supabaseUrl/auth/v1/token?grant_type=refresh_token"
                 val jsonBody = org.json.JSONObject().apply {
@@ -174,13 +185,13 @@ object AdminSession {
                     .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
-                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val mediaType = "application/json; charset=utf-8".toMediaTypeOrThrow()
                 val request = okhttp3.Request.Builder()
                     .url(url)
                     .addHeader("Authorization", "Bearer $anonKey")
                     .addHeader("apikey", anonKey)
                     .addHeader("Content-Type", "application/json")
-                    .post(jsonBody.toRequestBody(mediaType))
+                    .post(jsonBody.toRequestBodyBytes(mediaType))
                     .build()
 
                 client.newCall(request).execute().use { response ->
@@ -221,7 +232,7 @@ object AdminSession {
     // ── Coroutine suspend version (للاستخدام من coroutine context) ────────────
 
     suspend fun getValidAccessTokenSuspend(context: Context): Pair<String?, Boolean> {
-        return kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        return suspendCancellableCoroutine { cont ->
             getValidAccessToken(context) { token, expired ->
                 if (cont.isActive) cont.resume(Pair(token, expired)) {}
             }
@@ -230,6 +241,8 @@ object AdminSession {
 }
 
 // ── Extension لاستخدام okhttp3 MediaType داخل AdminSession ─────────────────
-private fun String.toMediaType(): okhttp3.MediaType = okhttp3.MediaType.Companion.parse(this)!!
-private fun String.toRequestBody(mediaType: okhttp3.MediaType): okhttp3.RequestBody =
+private fun String.toMediaTypeOrThrow(): okhttp3.MediaType {
+    return okhttp3.MediaType.parse(this) ?: throw IllegalArgumentException("Invalid media type: $this")
+}
+private fun String.toRequestBodyBytes(mediaType: okhttp3.MediaType): okhttp3.RequestBody =
     okhttp3.RequestBody.create(mediaType, this.toByteArray(Charsets.UTF_8))

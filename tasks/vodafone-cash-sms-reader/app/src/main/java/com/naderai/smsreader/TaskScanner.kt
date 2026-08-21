@@ -678,7 +678,6 @@ object TaskScanner {
         }
 
         // ── EVENT: DUPLICATE_CHECK (قبل الإرسال) ───────────────────────
-        val txIdForDuplicateCheck = (result as? ScanResult.Success)?.message?.transactionId
         val verifyStart = System.currentTimeMillis()
         OrderEventLogger.log(
             event = "DUPLICATE_CHECK",
