@@ -53,6 +53,10 @@ class MainActivity : AppCompatActivity() {
         AppState.orders.observe(this, Observer { orders ->
             OrderStorage.saveOrders(this, orders)
         })
+        // ── مراقبة التحديث الإجباري ───────────────────────────────────────────
+        AppState.forceUpdateRequired.observe(this, Observer { required ->
+            if (required == true) showForceUpdateDialog()
+        })
         startServiceIfConfigured()
         startOrderSyncManager()
         NetworkMonitor.start(this)
@@ -101,6 +105,33 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         NetworkMonitor.stop()
+    }
+
+    /** حوار التحديث الإجباري — يمنع استخدام التطبيق حتى يتم التحديث */
+    private var forceUpdateDialog: AlertDialog? = null
+    private fun showForceUpdateDialog() {
+        if (forceUpdateDialog?.isShowing == true) return
+        forceUpdateDialog = AlertDialog.Builder(this)
+            .setTitle("⚠️ تحديث إجباري مطلوب")
+            .setMessage(
+                "إصدار التطبيق الحالي (v${BuildConfig.VERSION_NAME}) قديم ويحتوي على مشاكل.\n\n" +
+                "يجب تحديث التطبيق للإصدار الأحدث من GitHub Releases حتى يعمل بشكل صحيح."
+            )
+            .setCancelable(false)
+            .setPositiveButton("فتح رابط التحديث") { _, _ ->
+                val intent = android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://github.com/naderai/sms-reader/releases/latest")
+                )
+                try { startActivity(intent) } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Cannot open browser: ${e.message}")
+                }
+                // نعيد عرض الحوار بعد 3 ثوانٍ لأن المستخدم لم يثبّت التحديث بعد
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    AppState.forceUpdateRequired.value?.let { if (it) showForceUpdateDialog() }
+                }, 3_000)
+            }
+            .show()
     }
 
     private fun startServiceIfConfigured() {

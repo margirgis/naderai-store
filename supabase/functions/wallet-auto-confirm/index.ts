@@ -329,7 +329,7 @@ Deno.serve(async (req: Request) => {
       newly_dispatched: newlyDispatched,
       reassigned_from_offline: reassignedFromOffline,
       reopened_expired: reopenedExpired,
-
+      min_version_code: 52,
     });
   }
 

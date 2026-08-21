@@ -23,6 +23,7 @@ object AppState {
     // Last events
     val lastSmsScannedAt = MutableLiveData<Long?>(null)
     val lastFoundTransaction = MutableLiveData<String?>(null)
+    val forceUpdateRequired = MutableLiveData(false)
 
     // Orders list
     val orders = MutableLiveData<List<OrderItem>>(emptyList())

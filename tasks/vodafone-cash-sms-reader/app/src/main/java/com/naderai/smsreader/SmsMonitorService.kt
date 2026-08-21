@@ -84,7 +84,13 @@ class SmsMonitorService : Service() {
                     return@forEach
                 }
                 // لا نعيد فتح الطلبات الفاشلة/المنتهية تلقائياً — يدوي فقط
-                if (existingStatus != null && existingStatus != OrderStatus.PENDING && existingStatus != OrderStatus.SCANNING) {
+                // السماح بإعادة الفحص لـ MANUAL_REVIEW و NOT_FOUND عند وصول SMS جديدة
+                val rescanAllowed = existingStatus == null ||
+                    existingStatus == OrderStatus.PENDING ||
+                    existingStatus == OrderStatus.SCANNING ||
+                    existingStatus == OrderStatus.MANUAL_REVIEW ||
+                    existingStatus == OrderStatus.NOT_FOUND
+                if (!rescanAllowed) {
                     return@forEach
                 }
                 if (TaskResultCache.get(context, task.taskId) != null) return@forEach
@@ -198,8 +204,15 @@ class SmsMonitorService : Service() {
                         "handlePendingTasks: skipping terminal order ${task.requestId} (${existingStatus.name})")
                     return@forEach
                 }
-                if (existingStatus != null && existingStatus != OrderStatus.PENDING && existingStatus != OrderStatus.SCANNING) {
-                    // لا نعيد فتح الطلبات غير المعلقة تلقائياً
+                // السماح بإعادة الفحص لـ PENDING و SCANNING و MANUAL_REVIEW و NOT_FOUND
+                val allowScan = existingStatus == null ||
+                    existingStatus == OrderStatus.PENDING ||
+                    existingStatus == OrderStatus.SCANNING ||
+                    existingStatus == OrderStatus.MANUAL_REVIEW ||
+                    existingStatus == OrderStatus.NOT_FOUND
+                if (!allowScan) {
+                    android.util.Log.d("SmsMonitorService",
+                        "handlePendingTasks: status=${existingStatus?.name} not scannable — skipping")
                     return@forEach
                 }
 
@@ -262,31 +275,52 @@ class SmsMonitorService : Service() {
         val webhookUrl = SupabaseConfig.getWebhookUrl(rawUrl)
         val secret = prefs.getString(MainActivity.KEY_SECRET, null)
 
-        if (!webhookUrl.isNullOrEmpty() && !secret.isNullOrEmpty()) {
+        val adminLoggedIn = AdminSession.isLoggedIn(this)
+        val hasWebhook = !webhookUrl.isNullOrEmpty() && !secret.isNullOrEmpty()
+
+        if (hasWebhook) {
+            // ── Webhook mode: Heartbeat يستلم المهام ويبدأ الفحص تلقائياً ──
             heartbeatManager?.stop()
             heartbeatManager = HeartbeatManager(
                 this,
-                webhookUrl,
-                secret,
+                webhookUrl!!,
+                secret!!,
                 onStatusChange = { connected, message ->
                     updateNotification(if (connected) "متصل ✓" else "غير متصل: $message")
-        },
-        onPendingTasks = { tasks ->
-            handlePendingTasks(this, tasks, webhookUrl, secret)
-}
-)
-heartbeatManager?.start()
-} else if (AdminSession.isLoggedIn(this)) {
-    updateNotification("متصل كأدمن ✓")
-    // مزامنة دورية كل 10 ثوانٍ للأدمن لتحديث الحالات مباشرة
-    orderSyncManager?.stop()
-    orderSyncManager = OrderSyncManager(this, SupabaseConfig.getAdminUrl(webhookUrl ?: "") ?: "") { success, msg ->
-        if (success) updateNotification("تمت المزامنة ✓")
-    }
-    orderSyncManager?.start()
-} else {
-    updateNotification("في انتظار الإعدادات...")
-}
+                },
+                onPendingTasks = { tasks ->
+                    handlePendingTasks(this, tasks, webhookUrl, secret)
+                }
+            )
+            heartbeatManager?.start()
+
+            // ── أيضاً: لو admin مسجل دخول شغّل OrderSyncManager لمزامنة الحالات ──
+            if (adminLoggedIn) {
+                val adminUrl = SupabaseConfig.getAdminUrl(webhookUrl) ?: ""
+                if (adminUrl.isNotEmpty()) {
+                    orderSyncManager?.stop()
+                    orderSyncManager = OrderSyncManager(this, adminUrl) { success, msg ->
+                        if (success) android.util.Log.d("SmsMonitorService", "Admin sync OK: $msg")
+                    }
+                    orderSyncManager?.start()
+                }
+            }
+        } else if (adminLoggedIn) {
+            // ── Admin-only mode: لا webhook — نستخدم Admin API مباشرة ──
+            updateNotification("متصل كأدمن ✓")
+            val adminUrl = SupabaseConfig.getAdminUrl("") ?: ""
+            if (adminUrl.isNotEmpty()) {
+                orderSyncManager?.stop()
+                orderSyncManager = OrderSyncManager(this, adminUrl) { success, msg ->
+                    if (success) updateNotification("مزامنة أدمن ✓")
+                }
+                orderSyncManager?.start()
+            } else {
+                updateNotification("أدمن — لا يوجد webhook URL")
+            }
+        } else {
+            updateNotification("في انتظار الإعدادات...")
+        }
 
         return START_STICKY
 }

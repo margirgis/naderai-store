@@ -235,6 +235,17 @@ class HeartbeatManager(
         try {
             val json = org.json.JSONObject(responseBody)
 
+            // ── تحقق من التحديث الإجباري ───────────────────────────────────────
+            val minVersionCode = json.optInt("min_version_code", 0)
+            if (minVersionCode > 0 && BuildConfig.VERSION_CODE < minVersionCode) {
+                android.util.Log.w("HeartbeatManager",
+                    "Force update required: current=${BuildConfig.VERSION_CODE} required=$minVersionCode")
+                AppState.forceUpdateRequired.postValue(true)
+                // لا نستمر في معالجة المهام — الجهاز يجب أن يتحدث أولاً
+                return
+            }
+            AppState.forceUpdateRequired.postValue(false)
+
             // معالجة الأوامر من السيرفر (server → android)
             if (json.has("commands")) {
                 val cmds = json.getJSONArray("commands")
