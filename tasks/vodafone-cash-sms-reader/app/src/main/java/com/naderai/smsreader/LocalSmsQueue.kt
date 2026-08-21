@@ -25,7 +25,7 @@ object LocalSmsQueue {
     private const val TAG = "LocalSmsQueue"
     private const val PREFS_FILE = "local_sms_queue"
     private const val KEY_QUEUE = "sms_queue"
-    private const val MAX_AGE_MS = 60 * 60 * 1000L  // 60 دقيقة
+    private const val MAX_AGE_MS = 24 * 60 * 60 * 1000L  // 24 ساعة — أي SMS عمره أقل مقبول
     private const val MAX_SIZE = 50                   // حد أقصى للذاكرة
 
     data class QueuedSms(
