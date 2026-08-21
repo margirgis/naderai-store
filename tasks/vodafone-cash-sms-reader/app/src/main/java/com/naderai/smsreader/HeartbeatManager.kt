@@ -1,5 +1,4 @@
 package com.naderai.smsreader
-import com.naderai.smsreader.BuildConfig
 
 import android.content.Context
 import android.net.ConnectivityManager
