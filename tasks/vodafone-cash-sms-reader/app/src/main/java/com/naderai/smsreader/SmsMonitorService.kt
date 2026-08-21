@@ -99,8 +99,23 @@ class SmsMonitorService : Service() {
 
 }
 
-        private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
-            val cached = TaskResultCache.get(context, task.taskId)
+    // Fix #3: حماية task=null — نتحقق من taskId قبل أي processing
+    private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
+
+        // ── Fix #3: TASK_ID_MISSING guard ─────────────────────────────────────────
+        if (task.taskId.isBlank()) {
+            android.util.Log.e("SmsMonitorService",
+                "TASK_ID_MISSING | order=${task.requestId} orderNum=${task.orderNumber} — aborting, no taskId to poll")
+            OrderDiagnosticsLog.log(
+                OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                task.orderNumber, task.requestId, null,
+                details = "TASK_ID_MISSING: order=${task.requestId} لا يحتوي على task_id — لا يمكن بدء الفحص"
+            )
+            AppState.updateOrderStatus(task.requestId, OrderStatus.FAILED)
+            return
+        }
+
+        val cached = TaskResultCache.get(context, task.taskId)
             if (cached != null) {
                 OrderEventLogger.scanFromCache(task.requestId, task.orderNumber, task.taskId)
                 applyCachedStatus(task.requestId, cached)
@@ -119,21 +134,28 @@ class SmsMonitorService : Service() {
                 "TASK_RECEIVED | order=${task.requestId} task=${task.taskId} " +
                 "queued=${task.queuedAt} dispatched=${task.dispatchedAt} received=${java.time.Instant.ofEpochMilli(receivedMs)}")
 
+            // Fix #4: ORDER_EXPIRED مستقل تماماً عن SESSION_EXPIRED
+            // نحدد سبب التجاهل بدقة: وقت الانتهاء + وقت الاستلام + الفارق
             if (!task.orderExpiresAt.isNullOrEmpty()) {
                 try {
                     val expiresMs = java.time.Instant.parse(task.orderExpiresAt).toEpochMilli()
-                    if (System.currentTimeMillis() > expiresMs) {
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs > expiresMs) {
+                        val overdueSec = (nowMs - expiresMs) / 1000
                         android.util.Log.w("SmsMonitorService",
-                            "ORDER_EXPIRED | order=${task.requestId} task=${task.taskId} expires=${task.orderExpiresAt}")
+                            "ORDER_EXPIRED | order=${task.requestId} task=${task.taskId} " +
+                            "expires=${task.orderExpiresAt} overdue_sec=$overdueSec reason=order_expiry_not_session")
                         OrderDiagnosticsLog.log(
                             OrderDiagnosticsLog.EventType.ORDER_SKIPPED,
                             task.orderNumber, task.requestId, task.taskId,
-                            details = "انتهت صلاحية الطلب expires=${task.orderExpiresAt}"
+                            details = "ORDER_EXPIRED: expires=${task.orderExpiresAt} overdue_sec=$overdueSec — ليس SESSION_EXPIRED"
                         )
+                        // تحديث حالة الطلب إلى EXPIRED لا FAILED
+                        AppState.updateOrderStatus(task.requestId, OrderStatus.EXPIRED)
                         TaskScanner.sendTaskResult(
                             context = context,
                             task = task,
-                            result = TaskScanner.ScanResult.Failure("انتهت صلاحية الطلب"),
+                            result = TaskScanner.ScanResult.Failure("ORDER_EXPIRED: انتهت صلاحية الطلب منذ ${overdueSec}s"),
                             webhookUrl = webhookUrl,
                             secret = secret,
                             onSent = { _ -> }
@@ -141,7 +163,8 @@ class SmsMonitorService : Service() {
                         return
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("SmsMonitorService", "Failed to parse orderExpiresAt: ${task.orderExpiresAt}", e)
+                    android.util.Log.e("SmsMonitorService",
+                        "Failed to parse orderExpiresAt: ${task.orderExpiresAt} — continuing scan", e)
                 }
             }
 

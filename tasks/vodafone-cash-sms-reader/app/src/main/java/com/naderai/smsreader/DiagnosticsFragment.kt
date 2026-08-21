@@ -163,8 +163,15 @@ class DiagnosticsFragment : Fragment() {
         }
 
         AppState.pendingTasks.observe(viewLifecycleOwner) { tasks ->
-            tvPendingQueue.text = "${tasks?.size ?: 0} طلب"
-            tvPolling.text = if (SmsMonitorService.isRunning) "✅ نشط (${tasks?.size ?: 0})" else "❌ متوقف"
+            // Fix #11: queue count صحيح — يعكس الطلبات الفعلية في الـ service + LocalSmsQueue
+            val ctx = requireContext()
+            val localQueueSize = LocalSmsQueue.size(ctx)
+            val pendingCount = tasks?.size ?: 0
+            tvPendingQueue.text = buildString {
+                append("$pendingCount طلب")
+                if (localQueueSize > 0) append(" + $localQueueSize SMS محلي")
+            }
+            tvPolling.text = if (SmsMonitorService.isRunning) "✅ نشط ($pendingCount)" else "❌ متوقف"
         }
 
         AppState.lastError.observe(viewLifecycleOwner) { err ->
@@ -284,54 +291,89 @@ class DiagnosticsFragment : Fragment() {
             Toast.makeText(requireContext(), "❌ لا يوجد Secret مُعيَّن في الإعدادات", Toast.LENGTH_LONG).show()
             return
         }
-        // يجب إرسال action=test_ping وليس ping — الـ server يتحقق من القيمة الدقيقة
         val payload = mapOf(
             "action" to "test_ping",
             "device_id" to HeartbeatManager.getDeviceId(requireContext())
         )
-        WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { success, msg, responseBody ->
+        WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { businessOk, msg, responseBody ->
             activity?.runOnUiThread {
+                // Fix #2: عرض الفرق الواضح — HTTP 200 + ok=false = API_FAILED وليس API_CONNECTED
+                val httpCode = Regex("\\b([1-5]\\d{2})\\b").find(msg)?.value?.toIntOrNull()
                 val displayMsg = when {
-                    success -> "✅ API متصل ويعمل"
-                    responseBody.contains("401") || msg.contains("401") ->
-                        "❌ خطأ مصادقة (401) — تأكد من صحة الـ Secret في الإعدادات"
-                    responseBody.contains("Invalid secret") ->
-                        "❌ Secret غير صحيح — راجع إعدادات الـ Webhook Secret"
-                    else -> "❌ فشل: $msg"
+                    businessOk ->
+                        "✅ API متصل ويعمل (HTTP 200 + ok=true)"
+                    msg.contains("API_FAILED") ->
+                        "⚠️ HTTP 200 لكن ok=false — API_FAILED\n${responseBody.take(100)}"
+                    httpCode == 401 || msg.contains("401") ->
+                        "❌ خطأ مصادقة (401) — تأكد من Secret"
+                    httpCode == 403 ->
+                        "❌ غير مصرح (403) — Secret خاطئ"
+                    msg.contains("Invalid secret") ->
+                        "❌ Secret غير صحيح"
+                    else ->
+                        "❌ فشل: $msg"
                 }
                 Toast.makeText(requireContext(), displayMsg, Toast.LENGTH_LONG).show()
-                tvApiStatus.text = if (success) "✅ متاح" else "❌ $msg"
+                // Fix #2: حالة API تعكس business success لا HTTP فقط
+                tvApiStatus.text = if (businessOk) "✅ متاح (ok=true)" else "❌ API_FAILED — $msg"
+                // تسجيل في DiagnosticsLog
+                OrderDiagnosticsLog.log(
+                    if (businessOk) OrderDiagnosticsLog.EventType.SERVER_RESPONSE_OK
+                    else OrderDiagnosticsLog.EventType.SERVER_RESPONSE_FAIL,
+                    details = "[TEST_CONNECTION] businessOk=$businessOk http=${httpCode ?: "?"} msg=${msg.take(60)}"
+                )
             }
         }
     }
 
     private fun testRealtime() {
-        // تشخيص: هل Realtime متصل من خلال حالة Service
+        // Fix #10: يفحص حالة Service + Heartbeat الفعلية لا يصنع حدثاً وهمياً
         val running = SmsMonitorService.isRunning
-        Toast.makeText(requireContext(),
-            if (running) "✅ Realtime/Polling نشط" else "❌ Service متوقف",
-            Toast.LENGTH_SHORT).show()
-        tvRealtime.text = if (running) "✅ متصل" else "❌ منفصل"
+        val pendingCount = AppState.pendingTasks.value?.size ?: 0
+        val retryCount = RetryQueue.size(requireContext())
+        val msg = buildString {
+            if (running) append("✅ Service نشط") else append("❌ Service متوقف")
+            append(" | انتظار=$pendingCount | إعادة=$retryCount")
+        }
+        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+        tvRealtime.text = if (running) "✅ متصل ($pendingCount طلب)" else "❌ منفصل"
+        tvRetryQueue.text = "$retryCount عنصر"
     }
 
     private fun testOrderReceive() {
-        // تشخيص: يعرض آخر طلب وصل من الـ logs
-        val last = OrderDiagnosticsLog.getLastOfType(OrderDiagnosticsLog.EventType.ORDER_RECEIVED)
-        if (last == null) {
-            Toast.makeText(requireContext(), "ℹ️ لم يصل أي طلب بعد", Toast.LENGTH_SHORT).show()
+        // Fix #10: يعرض بيانات حقيقية من DiagnosticsLog بدون إنشاء أحداث اصطناعية
+        val lastReceived = OrderDiagnosticsLog.getLastOfType(OrderDiagnosticsLog.EventType.ORDER_RECEIVED)
+        val lastSkipped  = OrderDiagnosticsLog.getLastOfType(OrderDiagnosticsLog.EventType.ORDER_SKIPPED)
+        val sb = StringBuilder()
+        if (lastReceived != null) {
+            sb.appendLine("📥 آخر طلب وصل:")
+            sb.appendLine("  رقم: #${lastReceived.orderNumber ?: lastReceived.requestId?.take(8)}")
+            sb.appendLine("  وقت: ${fmt.format(Date(lastReceived.ts))}")
+            if (!lastReceived.details.isNullOrEmpty()) sb.appendLine("  تفاصيل: ${lastReceived.details.take(80)}")
         } else {
-            val msg = "آخر طلب: #${last.orderNumber ?: last.requestId?.take(8)} — ${fmt.format(Date(last.ts))}"
-            Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+            sb.appendLine("ℹ️ لم يصل أي طلب بعد")
         }
+        if (lastSkipped != null) {
+            sb.appendLine()
+            sb.appendLine("⏭ آخر طلب مُجاهَل:")
+            sb.appendLine("  رقم: #${lastSkipped.orderNumber ?: lastSkipped.requestId?.take(8)}")
+            sb.appendLine("  سبب: ${lastSkipped.details?.take(80) ?: "غير معروف"}")
+        }
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("📥 استلام الطلبات")
+            .setMessage(sb.toString())
+            .setPositiveButton("موافق", null)
+            .show()
     }
 
     private fun sendDiagEvent() {
-        // يُرسل حدث تشخيصي بحت — لا يؤثر على أي Order
+        // Fix #10: حدث تشخيصي مُصنَّف بوضوح TEST — لا يختلط مع أحداث الطلبات
+        val deviceId = HeartbeatManager.getDeviceId(requireContext()).take(8)
         OrderDiagnosticsLog.log(
             OrderDiagnosticsLog.EventType.GENERIC_ERROR,
-            details = "DIAG_TEST from ${HeartbeatManager.getDeviceId(requireContext()).take(8)}"
+            details = "[TEST] DIAG_TEST from $deviceId — not a real order event"
         )
-        Toast.makeText(requireContext(), "✅ تم إرسال Diagnostic Event في السجل", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), "✅ تم تسجيل Diagnostic Event (مُصنَّف TEST)", Toast.LENGTH_SHORT).show()
     }
 
     private fun showLastEvents() {

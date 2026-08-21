@@ -69,9 +69,17 @@ object WebhookSender {
 
                 override fun onResponse(call: Call, response: Response) {
                     val responseBody = response.body?.string() ?: ""
-                    val success = response.isSuccessful && responseBody.contains("\"ok\":true")
-                    android.util.Log.d("WebhookSender", "POST $url HTTP ${response.code} ok=$success length=${responseBody.length}")
-                    onResult(success, if (success) "تم إرسال التأكيد بنجاح" else "استجابة الخادم: ${response.code}", responseBody)
+                    // Fix #2: فصل HTTP success عن business success
+                    // HTTP 200 مع "ok":false → API_FAILED وليس API_CONNECTED
+                    val httpOk = response.isSuccessful
+                    val businessOk = httpOk && responseBody.contains("\"ok\":true")
+                    val msg = when {
+                        businessOk                     -> "تم إرسال التأكيد بنجاح"
+                        httpOk && !businessOk          -> "API_FAILED: HTTP ${response.code} لكن ok=false | ${responseBody.take(120)}"
+                        else                           -> "HTTP_ERROR: ${response.code}"
+                    }
+                    android.util.Log.d("WebhookSender", "POST $url HTTP ${response.code} httpOk=$httpOk businessOk=$businessOk length=${responseBody.length}")
+                    onResult(businessOk, msg, responseBody)
                 }
             })
         }
@@ -106,9 +114,16 @@ object WebhookSender {
 
                 override fun onResponse(call: Call, response: Response) {
                     val responseBody = response.body?.string() ?: ""
-                    val success = response.isSuccessful && responseBody.contains("\"ok\":true")
-                    android.util.Log.d("WebhookSender", "sendAdminJson $url HTTP ${response.code} ok=$success")
-                    onResult(success, if (success) "تم" else "استجابة الخادم: ${response.code}", responseBody)
+                    // Fix #2: نفس المنطق — HTTP 200 + ok=false = API_FAILED
+                    val httpOk = response.isSuccessful
+                    val businessOk = httpOk && responseBody.contains("\"ok\":true")
+                    val msg = when {
+                        businessOk            -> "تم"
+                        httpOk && !businessOk -> "API_FAILED: HTTP ${response.code} ok=false | ${responseBody.take(120)}"
+                        else                  -> "HTTP_ERROR: ${response.code}"
+                    }
+                    android.util.Log.d("WebhookSender", "sendAdminJson $url HTTP ${response.code} httpOk=$httpOk businessOk=$businessOk")
+                    onResult(businessOk, msg, responseBody)
                 }
             })
         }

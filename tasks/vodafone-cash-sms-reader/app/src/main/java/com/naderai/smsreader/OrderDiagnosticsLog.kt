@@ -112,6 +112,12 @@ object OrderDiagnosticsLog {
     private const val MAX_ENTRIES = 500
     private var idCounter = 0L
 
+    // Fix #5: Deduplication — منع تكرار نفس الحدث خلال نافذة زمنية قصيرة
+    // المفتاح: type + requestId + hash أول 40 حرف من details
+    private data class DedupKey(val type: EventType, val requestId: String?, val detailsHash: Int)
+    private val recentDedupMap = java.util.concurrent.ConcurrentHashMap<DedupKey, Long>()
+    private const val DEDUP_WINDOW_MS = 2000L  // 2 ثانية
+
     // LiveData للمراقبة الفورية من الـ UI
     val liveEntries = androidx.lifecycle.MutableLiveData<List<LogEntry>>(emptyList())
 
@@ -135,6 +141,29 @@ object OrderDiagnosticsLog {
         serverCode: Int? = null,
         serverResponse: String? = null,
     ) {
+        // Fix #5: Deduplication — نتحقق أولاً هل سُجّل نفس الحدث خلال 2 ثانية
+        // نستثني أحداث الأخطاء (AUTH_ERROR, SERVER_RESPONSE_ERROR) من dedup حتى لا نخفيها
+        val deduplicatable = type !in setOf(
+            EventType.AUTH_ERROR, EventType.SERVER_RESPONSE_ERROR,
+            EventType.GENERIC_ERROR, EventType.NETWORK_ERROR
+        )
+        if (deduplicatable) {
+            val key = DedupKey(type, requestId, details?.take(40)?.hashCode() ?: 0)
+            val lastTs = recentDedupMap[key]
+            val nowMs = System.currentTimeMillis()
+            if (lastTs != null && nowMs - lastTs < DEDUP_WINDOW_MS) {
+                // نفس الحدث خلال نافذة dedup — نتجاهله ونُسجّل في Logcat فقط
+                android.util.Log.v("DiagLog", "DEDUP_SKIP | type=${type.name} req=${requestId?.take(8)} — same event within ${DEDUP_WINDOW_MS}ms")
+                return
+            }
+            recentDedupMap[key] = nowMs
+            // تنظيف القديم كل 100 إدخال تقريباً
+            if (recentDedupMap.size > 200) {
+                val cutoff = nowMs - DEDUP_WINDOW_MS * 10
+                recentDedupMap.entries.removeAll { it.value < cutoff }
+            }
+        }
+
         val entry = LogEntry(
             id = ++idCounter,
             ts = System.currentTimeMillis(),

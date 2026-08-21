@@ -52,6 +52,24 @@ object TaskScanner {
     /** حماية من تشغيل أكثر من Scanner على نفس المهمة في نفس الوقت */
     private val activeScanJobs = Collections.synchronizedSet(mutableSetOf<String>())
 
+    // Fix #8: حماية محلية من تكرار transaction_id
+    // Set يحتفظ بـ transactionIds المؤكدة — يمنع إرسال نفس txId مرتين
+    private val confirmedTransactionIds = Collections.synchronizedSet(mutableSetOf<String>())
+
+    /**
+     * يسجّل transaction_id كـ "مستخدم" بعد نجاح الإرسال للسيرفر.
+     * يُستدعى من sendAdminTaskResultWithToken عند ok=true.
+     */
+    fun markTransactionConfirmed(txId: String) {
+        if (txId.isNotBlank()) confirmedTransactionIds.add(txId)
+    }
+
+    /**
+     * يتحقق محلياً هل سبق استخدام هذا txId — قبل إرسال أي نتيجة للسيرفر.
+     */
+    fun isTransactionLocallyConfirmed(txId: String): Boolean =
+        confirmedTransactionIds.contains(txId)
+
     fun isScanning(taskId: String): Boolean = activeScanJobs.contains(taskId)
 
     fun clearScanLock(taskId: String) {
@@ -262,7 +280,27 @@ object TaskScanner {
                     .parse(it.take(19))?.time
             }.getOrNull()
         }
-        val targetAmount = task.fingerprintAmount ?: task.amountRequested
+        // Fix #6: targetAmount يجب أن يأتي من الـ snapshot الأصلي فقط — لا نستبدله بأي قيمة افتراضية
+        // fingerprintAmount = قيمة من الموقع المشترك للمطابقة الدقيقة (كـ 400.00)
+        // amountRequested   = مبلغ الطلب الأصلي كما أرسله الموقع (كـ 5.40)
+        // القاعدة: amountRequested هو المرجع الوحيد — لا نستبدله أبداً
+        // fingerprintAmount يستخدم فقط إذا كان موجوداً وأرسله الموقع عمداً كتلميح للمطابقة
+        val targetAmount = if (task.fingerprintAmount != null && task.fingerprintAmount > 0.0) {
+            Log.d(TAG, "AMOUNT_SOURCE | trace=$traceId order=${task.requestId} using fingerprintAmount=${task.fingerprintAmount} (NOT amountRequested=${task.amountRequested})")
+            task.fingerprintAmount
+        } else {
+            Log.d(TAG, "AMOUNT_SOURCE | trace=$traceId order=${task.requestId} using amountRequested=${task.amountRequested}")
+            task.amountRequested
+        }
+        if (targetAmount <= 0.0) {
+            Log.e(TAG, "AMOUNT_INVALID | trace=$traceId order=${task.requestId} targetAmount=$targetAmount — الطلب لا يحتوي على مبلغ صالح")
+            OrderDiagnosticsLog.log(
+                OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                task.orderNumber, task.requestId, task.taskId,
+                details = "AMOUNT_INVALID: amountRequested=${task.amountRequested} fingerprintAmount=${task.fingerprintAmount}"
+            )
+            return ScanResult.Failure("AMOUNT_INVALID: مبلغ الطلب غير صالح (amountRequested=${task.amountRequested})")
+        }
 
         val candidates = mutableListOf<ScannedMessage>()
         cursor.use { c ->
@@ -435,20 +473,47 @@ object TaskScanner {
             is ScanResult.Failure -> "failure"
         }
 
-        val accessToken = if (AdminSession.isLoggedIn(context)) AdminSession.accessToken(context) else null
-        if (!accessToken.isNullOrEmpty()) {
+        // ── Fix #1: استخدم getValidAccessToken للحصول على token صالح (مع auto-refresh) ──
+        if (AdminSession.isLoggedIn(context)) {
             val adminUrl = SupabaseConfig.getAdminTaskResultUrl(
                 context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
                     .getString(MainActivity.KEY_WEBHOOK_URL, null)
             )
             if (!adminUrl.isNullOrEmpty()) {
-                Log.d(TAG, "Sending task result via admin endpoint for task ${task.taskId}")
-                sendAdminTaskResult(context, adminUrl, task, result, idempotencyKey, resultStatus, onSent, notifyUi, onServerResponse) { success ->
-                    if (!success && webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
-                        Log.w(TAG, "Admin endpoint failed, falling back to webhook for task ${task.taskId}")
-                        sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent, notifyUi)
-                    } else {
-                        onSent?.invoke(success)
+                AdminSession.getValidAccessToken(context) { validToken, sessionExpired ->
+                    if (sessionExpired || validToken.isNullOrEmpty()) {
+                        // SESSION_EXPIRED — سجّل وتراجع للـ webhook
+                        Log.w(TAG, "SESSION_EXPIRED | task=${task.taskId} order=${task.requestId} — falling back to webhook")
+                        OrderDiagnosticsLog.log(
+                            OrderDiagnosticsLog.EventType.AUTH_ERROR,
+                            task.orderNumber, task.requestId, task.taskId,
+                            details = "SESSION_EXPIRED: no valid token for admin endpoint; using webhook fallback"
+                        )
+                        // إظهار خطأ SESSION_EXPIRED في حالة الطلب
+                        AppState.updateOrderStatus(task.requestId, OrderStatus.WAITING_CONFIRMATION)
+                        if (webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
+                            sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent, notifyUi)
+                        } else {
+                            Log.e(TAG, "SESSION_EXPIRED + no webhook available — result lost for task=${task.taskId}")
+                            RetryQueue.enqueue(context, task.taskId, idempotencyKey, mapOf(
+                                "action" to "task_result",
+                                "task_id" to task.taskId,
+                                "status" to resultStatus,
+                                "failure_reason" to "SESSION_EXPIRED — re-auth needed"
+                            ))
+                            if (notifyUi) taskResultCallback?.invoke(task, result)
+                            onSent?.invoke(false)
+                        }
+                        return@getValidAccessToken
+                    }
+                    Log.d(TAG, "Sending task result via admin endpoint for task ${task.taskId}")
+                    sendAdminTaskResultWithToken(context, adminUrl, validToken, task, result, idempotencyKey, resultStatus, onSent, notifyUi, onServerResponse) { success ->
+                        if (!success && webhookUrl.isNotEmpty() && secret.isNotEmpty()) {
+                            Log.w(TAG, "Admin endpoint failed, falling back to webhook for task ${task.taskId}")
+                            sendViaWebhook(context, task, result, webhookUrl, secret, resultStatus, idempotencyKey, onSent, notifyUi)
+                        } else {
+                            onSent?.invoke(success)
+                        }
                     }
                 }
                 return
@@ -517,9 +582,15 @@ object TaskScanner {
         }
     }
 
-    private fun sendAdminTaskResult(
+    /**
+     * يرسل نتيجة فحص SMS عبر endpoint الأدمن مع token صالح مُتحقق منه مسبقاً.
+     * الفرق عن النسخة القديمة: يستقبل validToken مباشرةً بدلاً من قراءته من AdminSession
+     * (لأنه مُجدَّد بالفعل في getValidAccessToken).
+     */
+    private fun sendAdminTaskResultWithToken(
         context: Context,
         adminUrl: String,
+        validToken: String,
         task: Task,
         result: ScanResult,
         idempotencyKey: String,
@@ -529,7 +600,6 @@ object TaskScanner {
         onServerResponse: ((scanStatus: String, ok: Boolean) -> Unit)? = null,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
-        val accessToken = AdminSession.accessToken(context) ?: return
         val refreshToken = AdminSession.refreshToken(context)
 
         val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
@@ -573,7 +643,7 @@ object TaskScanner {
 
         val body = mutableMapOf<String, Any>(
             "device_id"       to HeartbeatManager.getDeviceId(context),
-            "access_token"    to accessToken,
+            "access_token"    to validToken,
             "refresh_token"   to (refreshToken ?: ""),
             "task_id"         to task.taskId,
             "request_id"      to task.requestId,
@@ -584,6 +654,28 @@ object TaskScanner {
         if (!failureReason.isNullOrEmpty()) body["failure_reason"] = failureReason
         if (!task.paymentOrderId.isNullOrEmpty()) body["payment_order_id"] = task.paymentOrderId
         if (!task.orderExpiresAt.isNullOrEmpty())  body["order_expires_at"] = task.orderExpiresAt
+
+        // ── Fix #8: Duplicate transaction protection محلي ──────────────────────
+        val txIdForDuplicateCheck = (result as? ScanResult.Success)?.message?.transactionId
+        if (!txIdForDuplicateCheck.isNullOrBlank() && isTransactionLocallyConfirmed(txIdForDuplicateCheck)) {
+            Log.w(TAG, "DUPLICATE_TRANSACTION_LOCAL | task=${task.taskId} txId=$txIdForDuplicateCheck — رُفض محلياً قبل الإرسال")
+            OrderDiagnosticsLog.log(
+                OrderDiagnosticsLog.EventType.DUPLICATE_CHECK,
+                task.orderNumber, task.requestId, task.taskId,
+                details = "DUPLICATE_TRANSACTION_LOCAL: txId=$txIdForDuplicateCheck سبق تأكيده محلياً — إلغاء الإرسال"
+            )
+            OrderEventLogger.log(
+                event = "DUPLICATE_CHECK",
+                orderId = task.requestId, orderNumber = task.orderNumber, deviceId = null,
+                status = "DUPLICATE_LOCAL",
+                details = "txId=$txIdForDuplicateCheck — rejected locally before server"
+            )
+            AppState.updateOrderStatus(task.requestId, OrderStatus.DUPLICATE)
+            if (notifyUi) taskResultCallback?.invoke(task, ScanResult.Failure("DUPLICATE_TRANSACTION: txId=$txIdForDuplicateCheck"))
+            onSent?.invoke(false)
+            onComplete?.invoke(false)
+            return
+        }
 
         // ── EVENT: DUPLICATE_CHECK (قبل الإرسال) ───────────────────────
         val txIdForDuplicateCheck = (result as? ScanResult.Success)?.message?.transactionId
@@ -636,6 +728,11 @@ object TaskScanner {
                     }
 
                     if (serverOk) {
+                        // Fix #8: سجّل txId كـ "مؤكد محلياً" لمنع إعادة الاستخدام
+                        if (!txIdForDuplicateCheck.isNullOrBlank()) {
+                            markTransactionConfirmed(txIdForDuplicateCheck)
+                            Log.i(TAG, "TX_CONFIRMED_LOCAL | txId=$txIdForDuplicateCheck order=${task.requestId}")
+                        }
                         OrderEventLogger.serverSuccess(reqId, orderNum, 200, responseBody)
                     } else {
                         OrderEventLogger.orderRejected(reqId, orderNum, serverScanStatus)
