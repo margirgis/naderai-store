@@ -108,6 +108,17 @@ class SmsMonitorService : Service() {
                 return
             }
 
+            // Phase-1: تسجيل received_at في AppState عند بدء المعالجة الفعلية
+            val receivedMs = System.currentTimeMillis()
+            AppState.getOrders().firstOrNull { it.requestId == task.requestId }?.let { existing ->
+                if (existing.receivedAt == null) {
+                    AppState.addOrUpdateOrder(existing.copy(receivedAt = receivedMs))
+                }
+            }
+            android.util.Log.d("SmsMonitorService",
+                "TASK_RECEIVED | order=${task.requestId} task=${task.taskId} " +
+                "queued=${task.queuedAt} dispatched=${task.dispatchedAt} received=${java.time.Instant.ofEpochMilli(receivedMs)}")
+
             if (!task.orderExpiresAt.isNullOrEmpty()) {
                 try {
                     val expiresMs = java.time.Instant.parse(task.orderExpiresAt).toEpochMilli()

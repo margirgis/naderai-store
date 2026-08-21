@@ -80,12 +80,27 @@ Deno.serve(async (req: Request) => {
   const { data: allOrdersData } = await db.rpc('get_all_orders_for_admin');
   const allOrders = (allOrdersData as any)?.orders ?? [];
 
-  // Also fetch pending tasks for this device so SMS scanning can still work
-  const { data: pendingData } = await db.rpc('get_device_pending_tasks', { p_device_id: deviceId });
-  const pendingObj = Array.isArray(pendingData) ? {} : ((pendingData as any) ?? {});
-  // Migration 00040 changed the RPC key to 'pending_tasks'; support both old and new shapes.
-  const pendingTasks = pendingObj.pending_tasks ?? pendingObj.tasks ?? [];
-  const commands = pendingObj.commands ?? [];
+  // Also fetch pending tasks for this device so SMS scanning can still work.
+  // get_device_pending_tasks returns RETURNS TABLE (rows array), NOT a JSON object.
+  // BUG-FIX: Previous code did Array.isArray(pendingData) ? {} : pendingData which turned
+  // the rows array into {} making pendingTasks always []. Now we handle both shapes:
+  //   - RETURNS TABLE → Supabase client returns an array directly
+  //   - Legacy JSON object shape → {pending_tasks: [], tasks: [], commands: []}
+  const { data: pendingData, error: pendingError } = await db.rpc('get_device_pending_tasks', { p_device_id: deviceId });
+  if (pendingError) {
+    console.error(`[admin-orders] get_device_pending_tasks error: ${pendingError.message}`);
+  }
+  let pendingTasks: any[] = [];
+  let commands: any[] = [];
+  if (Array.isArray(pendingData)) {
+    // RETURNS TABLE shape — rows come back as a plain array
+    pendingTasks = pendingData;
+  } else if (pendingData && typeof pendingData === 'object') {
+    // Legacy JSON object shape
+    const obj = pendingData as any;
+    pendingTasks = obj.pending_tasks ?? obj.tasks ?? [];
+    commands = obj.commands ?? [];
+  }
   console.log(`[admin-orders] device_id=${deviceId} pending_tasks returned=${pendingTasks.length} commands=${commands.length}`);
 
   return jsonResponse({

@@ -155,7 +155,11 @@ class OrderSyncManager(
                 paymentMethod = obj.optString("payment_method").takeIf { it.isNotEmpty() },
                 requestCreatedAt = obj.optString("request_created_at").takeIf { it.isNotEmpty() },
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
-                orderExpiresAt = obj.optString("order_expires_at").takeIf { it.isNotEmpty() }
+                orderExpiresAt = obj.optString("order_expires_at").takeIf { it.isNotEmpty() },
+                // Phase-1: lifecycle timestamps
+                queuedAt     = obj.optString("queued_at").takeIf { it.isNotEmpty() },
+                dispatchedAt = obj.optString("dispatched_at").takeIf { it.isNotEmpty() },
+                receivedAt   = java.time.Instant.now().toString()
             )
         }
     }

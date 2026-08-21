@@ -78,7 +78,11 @@ object TaskScanner {
         val requestCreatedAt: String?,
         // بيانات payment_order الجديدة
         val paymentOrderId: String?,
-        val orderExpiresAt: String?
+        val orderExpiresAt: String?,
+        // Phase-1: timestamps لتتبع lifecycle الطلب
+        val queuedAt: String?     = null,   // وقت دخول الطلب الـ queue في الـ server
+        val dispatchedAt: String? = null,   // وقت إرسال الطلب لهذا الجهاز
+        val receivedAt: String?   = null    // وقت استلام الجهاز للطلب (يُسجَّل محلياً)
     )
 
     /**

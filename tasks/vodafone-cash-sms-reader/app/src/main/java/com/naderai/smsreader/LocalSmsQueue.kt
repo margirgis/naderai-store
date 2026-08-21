@@ -67,22 +67,26 @@ object LocalSmsQueue {
         val now = System.currentTimeMillis()
         val list = loadRaw(prefs).filter { now - it.receivedAt < MAX_AGE_MS }
 
-        // phone مطلوب دائماً في الطلب
-        val requestedRaw = task.senderPhoneRequested?.trim().orEmpty()
-        if (requestedRaw.isEmpty()) {
-            Log.w(TAG, "findMatch: task ${task.taskId} has no senderPhoneRequested — cannot match from queue")
-            return null
-        }
-        val normalizedRequested = normalizeEgyptianPhone(requestedRaw)
-        if (normalizedRequested.isEmpty()) return null
-
         val targetAmount = task.fingerprintAmount ?: task.amountRequested
+        if (targetAmount <= 0) return null
 
-        return list.firstOrNull { sms ->
-            val phoneMatch = sms.senderPhone != null && sms.senderPhone == normalizedRequested
-            val amountMatch = sms.amount != null && targetAmount > 0 &&
+        val requestedRaw = task.senderPhoneRequested?.trim().orEmpty()
+        val normalizedRequested = if (requestedRaw.isNotEmpty()) normalizeEgyptianPhone(requestedRaw) else ""
+
+        // Phase-1 FIX: إذا لم يُحدَّد رقم المُرسِل → نطابق بالمبلغ فقط (نفس منطق TaskScanner)
+        return if (normalizedRequested.isEmpty()) {
+            Log.d(TAG, "findMatch: task ${task.taskId} has no senderPhoneRequested — matching by amount only")
+            list.firstOrNull { sms ->
+                sms.amount != null &&
                     Math.round(sms.amount * 100) == Math.round(targetAmount * 100)
-            phoneMatch && amountMatch
+            }
+        } else {
+            list.firstOrNull { sms ->
+                val phoneMatch = sms.senderPhone != null && sms.senderPhone == normalizedRequested
+                val amountMatch = sms.amount != null &&
+                    Math.round(sms.amount * 100) == Math.round(targetAmount * 100)
+                phoneMatch && amountMatch
+            }
         }
     }
 

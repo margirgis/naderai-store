@@ -575,6 +575,10 @@ data class OrderItem(
     val receiverWalletFound: String? = null,
     val smsBodyFound: String? = null,
     val scannedAt: Long? = null,
+    // Phase-1: timestamps لتتبع lifecycle الطلب (Order → Queue → Dispatch → Device)
+    val queuedAt: String? = null,       // وقت دخول الـ queue في السيرفر
+    val dispatchedAt: String? = null,   // وقت dispatch للجهاز
+    val receivedAt: Long? = null,       // وقت استلام الجهاز للطلب (System.currentTimeMillis())
     // Snapshot ثابت للطلب
     val snapshot: OrderSnapshot? = null
 ) {
