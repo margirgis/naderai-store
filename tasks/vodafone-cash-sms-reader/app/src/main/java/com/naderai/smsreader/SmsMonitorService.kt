@@ -96,11 +96,10 @@ class SmsMonitorService : Service() {
                 if (TaskResultCache.get(context, task.taskId) != null) return@forEach
                 processTask(context, task, webhookUrl ?: "", secret ?: "")
             }
+        }
 
-}
-
-    // Fix #3: حماية task=null — نتحقق من taskId قبل أي processing
-    private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
+        // Fix #3: حماية task=null — نتحقق من taskId قبل أي processing
+        private fun processTask(context: Context, task: TaskScanner.Task, webhookUrl: String, secret: String) {
 
         // ── Fix #3: TASK_ID_MISSING guard ─────────────────────────────────────────
         if (task.taskId.isBlank()) {
@@ -304,7 +303,7 @@ class SmsMonitorService : Service() {
             }
             TaskScanner.resendCachedResult(context, task, cached, webhookUrl, secret)
         }
-}
+    } // end companion object
 
     override fun onCreate() {
         super.onCreate()
@@ -314,20 +313,20 @@ class SmsMonitorService : Service() {
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, buildNotification("جاري الاتصال..."))
             acquireWakeLock()
-} catch (e: Exception) {
-    android.util.Log.e("SmsMonitorService", "Failed to start service: ${e.message}", e)
-    AppState.lastError.postValue("فشل تشغيل خدمة SMS: ${e.message}")
-    stopSelf()
-}
-}
+        } catch (e: Exception) {
+            android.util.Log.e("SmsMonitorService", "Failed to start service: ${e.message}", e)
+            AppState.lastError.postValue("فشل تشغيل خدمة SMS: ${e.message}")
+            stopSelf()
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
                 stopSelf()
                 return START_NOT_STICKY
-    }
-}
+            }
+        }
 
         val prefs = getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
         val rawUrl = prefs.getString(MainActivity.KEY_WEBHOOK_URL, null)
@@ -382,7 +381,7 @@ class SmsMonitorService : Service() {
         }
 
         return START_STICKY
-}
+    }
 
     override fun onDestroy() {
         isRunning = false
