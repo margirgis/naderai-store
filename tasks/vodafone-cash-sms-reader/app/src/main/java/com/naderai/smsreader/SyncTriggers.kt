@@ -41,12 +41,39 @@ object SyncTriggers {
 
     /**
      * يُستدعى عند فتح التطبيق (MainActivity.onCreate).
+     * Fix #6: الترتيب الصحيح:
+     *   1) تحميل الطلبات المحلية المحفوظة → لا تضيع الطلبات بعد إعادة التشغيل
+     *   2) تسجيل حدث APP_START_RECOVERY في Diagnostics
+     *   3) مزامنة فورية لجلب أي طلبات فائتة من السيرفر
+     *   4) تشغيل المزامنة الدورية
      */
     fun onAppStart(ctx: Context) {
         val app = ctx.applicationContext
         initialize(app)
-        startPeriodicSync(app)
+
+        // 1) تحميل الطلبات المحفوظة محلياً قبل أي طلب شبكي
+        val localOrders = OrderStorage.loadOrders(app)
+        if (localOrders.isNotEmpty()) {
+            AppState.mergeOrders(localOrders)
+            android.util.Log.i("SyncTriggers",
+                "APP_START: loaded ${localOrders.size} local orders from storage")
+            OrderDiagnosticsLog.log(
+                OrderDiagnosticsLog.EventType.LOCAL_ORDERS_LOADED,
+                details = "count=${localOrders.size} — محمّلة من التخزين المحلي"
+            )
+        }
+
+        // 2) تسجيل حدث بدء التطبيق
+        OrderDiagnosticsLog.log(
+            OrderDiagnosticsLog.EventType.APP_START_RECOVERY,
+            details = "local_orders=${localOrders.size} — بدء الاسترجاع"
+        )
+
+        // 3) مزامنة فورية لجلب الطلبات الفائتة
         triggerSync(app, "app_start")
+
+        // 4) تشغيل المزامنة الدورية
+        startPeriodicSync(app)
     }
 
     /**

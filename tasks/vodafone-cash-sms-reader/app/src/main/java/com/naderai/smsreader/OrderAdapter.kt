@@ -57,10 +57,23 @@ class OrderAdapter(
             binding.orderCustomerEmail.text = snap.customerEmail?.takeIf { it.isNotEmpty() } ?: "—"
 
             // رقم المحوّل (senderPhoneRequested) — محفظة العميل التي يجب التحويل منها
-            binding.orderSenderPhone.text = snap.senderPhoneRequested?.takeIf { it.isNotEmpty() } ?: "—"
+            val senderPhone = snap.senderPhoneRequested?.trim()
+            if (senderPhone.isNullOrEmpty()) {
+                binding.orderSenderPhone.text = "غير محدد"
+                binding.orderSenderPhone.alpha = 0.55f
+                // تسجيل بيانات ناقصة للتشخيص
+                OrderDiagnosticsLog.log(
+                    OrderDiagnosticsLog.EventType.DATA_INCOMPLETE,
+                    order.orderNumber, order.requestId,
+                    details = "sender_phone_requested=null | order=${order.requestId}"
+                )
+            } else {
+                binding.orderSenderPhone.text = senderPhone
+                binding.orderSenderPhone.alpha = 1f
+            }
             binding.orderSenderName.text = order.senderNameFound?.takeIf { it.isNotEmpty() }
                 ?: snap.senderNameRequested?.takeIf { it.isNotEmpty() }
-                ?: "—"
+                ?: "غير محدد"
 
             // طريقة الدفع
             binding.orderPaymentMethod.text = when (snap.paymentMethod) {

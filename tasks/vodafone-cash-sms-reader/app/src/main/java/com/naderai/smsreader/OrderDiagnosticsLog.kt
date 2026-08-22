@@ -24,23 +24,31 @@ object OrderDiagnosticsLog {
         SCAN_STARTED("بدأ الفحص", "🔍"),
         SCAN_CACHED("من الكاش", "💾"),
         SCAN_LOCKED("مقفل — فحص آخر جارٍ", "🔒"),
-        SMS_SEARCH_STARTED("بدء البحث في SMS", "🔎"),  // Phase-2
-        SMS_FOUND("وُجدت رسالة مطابقة", "📩"),          // Phase-2: sms_found state
-        REVIEWING("جاري المراجعة", "🧐"),               // Phase-2: reviewing state
+        SMS_SEARCH_STARTED("بدء البحث في SMS", "🔎"),
+        SMS_FOUND("وُجدت رسالة مطابقة", "📩"),
+        REVIEWING("جاري المراجعة", "🧐"),
         SMS_MATCH_FOUND("تطابق وُجد", "✅"),
         SMS_NOT_FOUND("لم يُوجد تطابق", "❌"),
         SMS_AMOUNT_MISMATCH("مبلغ غير مطابق", "⚠️"),
         SMS_SCAN_FAILED("فشل الفحص", "💥"),
-        SMS_PARSE_SUCCESS("تحليل ناجح", "🔤"),          // Phase-2
-        SMS_PARSE_FAILED("فشل التحليل", "❗"),           // Phase-2
-        SOURCE_VALIDATION("فحص المصدر", "🛡"),          // Phase-2
-        AMOUNT_CHECK("فحص المبلغ", "💰"),                // Phase-2
-        SENDER_CHECK("فحص المُرسِل", "📱"),              // Phase-2
-        WALLET_CHECK("فحص المحفظة", "👛"),               // Phase-2
-        TIMESTAMP_CHECK("فحص التوقيت", "🕐"),            // Phase-2
-        DUPLICATE_CHECK("فحص التكرار", "🔁"),            // Phase-2
-        VERIFY_SUBMITTED("إرسال التحقق", "📤"),          // Phase-2
-        VERIFY_RESULT("نتيجة التحقق", "📋"),             // Phase-2
+        SMS_PARSE_SUCCESS("تحليل ناجح", "🔤"),
+        SMS_PARSE_FAILED("فشل التحليل", "❗"),
+        SOURCE_VALIDATION("فحص المصدر", "🛡"),
+        AMOUNT_CHECK("فحص المبلغ", "💰"),
+        SENDER_CHECK("فحص المُرسِل", "📱"),
+        WALLET_CHECK("فحص المحفظة", "👛"),
+        TIMESTAMP_CHECK("فحص التوقيت", "🕐"),
+        DUPLICATE_CHECK("فحص التكرار", "🔁"),
+        VERIFY_SUBMITTED("إرسال التحقق", "📤"),
+        VERIFY_RESULT("نتيجة التحقق", "📋"),
+        // Fix #5: بيانات ناقصة في payload
+        DATA_INCOMPLETE("بيانات ناقصة في الطلب", "⚠"),
+        // Fix #5: ACK استلام
+        DELIVERY_ACK_SENT("تم إرسال ACK استلام", "📬"),
+        DELIVERY_ACK_FAIL("فشل إرسال ACK استلام", "📭"),
+        // Fix #5: وضع الاختبار (TEST_ONLY)
+        TEST_SCAN_START("اختبار فحص [TEST]", "🧪"),
+        TEST_SCAN_RESULT("نتيجة اختبار فحص [TEST]", "🧪"),
         // إرسال للسيرفر
         SERVER_SEND_START("إرسال للسيرفر", "📤"),
         SERVER_RESPONSE_OK("سيرفر: قبول", "🟢"),
@@ -50,6 +58,12 @@ object OrderDiagnosticsLog {
         MANUAL_CONFIRM_START("تأكيد يدوي", "🖐"),
         MANUAL_CONFIRM_OK("تأكيد يدوي ✓", "🟢"),
         MANUAL_CONFIRM_FAIL("تأكيد يدوي ✗", "🔴"),
+        // Fix #6: استرجاع وبدء التطبيق
+        APP_START_RECOVERY("استرجاع عند بدء التطبيق", "🚀"),
+        LOCAL_ORDERS_LOADED("طلبات محلية محمّلة", "📦"),
+        DEVICE_REGISTER_SENT("إرسال تسجيل الجهاز", "📲"),
+        DEVICE_REGISTER_OK("تسجيل الجهاز ✓", "✅"),
+        DEVICE_REGISTER_FAIL("فشل تسجيل الجهاز", "❌"),
         // حالة النظام
         HEARTBEAT_TASKS("مهام من heartbeat", "💓"),
         SYNC_TASKS("مهام من sync", "🔃"),

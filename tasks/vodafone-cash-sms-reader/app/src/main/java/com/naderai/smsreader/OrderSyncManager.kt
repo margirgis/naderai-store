@@ -283,6 +283,48 @@ class OrderSyncManager(
             if (dispatched > 0) OrderEventLogger.orderDispatched(null, null, deviceId)
             if (reassigned > 0) OrderEventLogger.staleDeviceReassigned(reassigned, deviceId)
             OrderEventLogger.syncResponse(orders.size, pendingTasks.size, deviceId)
+            // Fix #4: تحذير orders=N tasks=0 — إذا وصلت طلبات بدون مهام فحص
+            if (orders.isNotEmpty() && pendingTasks.isEmpty()) {
+                val unfinished = AppState.getOrders().filter {
+                    it.status in setOf(
+                        OrderStatus.PENDING, OrderStatus.NEW,
+                        OrderStatus.SCANNING, OrderStatus.NOT_FOUND
+                    )
+                }
+                if (unfinished.isNotEmpty()) {
+                    android.util.Log.w(TAG,
+                        "orders=${orders.size} tasks=0 — ${unfinished.size} orders still unfinished! Requesting re-sync in 5s")
+                    OrderDiagnosticsLog.log(
+                        OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                        details = "orders=${orders.size} pending_tasks=0 — ${unfinished.size} طلبات غير مكتملة بلا مهام!"
+                    )
+                    // إعادة المزامنة بعد 5 ثواني لجلب pending_tasks الفائتة
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        sync()
+                    }, 5_000L)
+                }
+            }
+            // Fix #4: تحذير orders=N tasks=0 — إذا وصلت طلبات بدون مهام فحص
+            if (orders.isNotEmpty() && pendingTasks.isEmpty()) {
+                val unfinished = AppState.getOrders().filter {
+                    it.status in setOf(
+                        OrderStatus.PENDING, OrderStatus.NEW,
+                        OrderStatus.SCANNING, OrderStatus.NOT_FOUND
+                    )
+                }
+                if (unfinished.isNotEmpty()) {
+                    android.util.Log.w(TAG,
+                        "orders=${orders.size} tasks=0 — ${unfinished.size} orders still unfinished! Requesting re-sync in 5s")
+                    OrderDiagnosticsLog.log(
+                        OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                        details = "orders=${orders.size} pending_tasks=0 — ${unfinished.size} طلبات غير مكتملة بلا مهام!"
+                    )
+                    // إعادة المزامنة بعد 5 ثواني لجلب pending_tasks الفائتة
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        sync()
+                    }, 5_000L)
+                }
+            }
             android.util.Log.d(TAG, "Synced ${orders.size} orders, ${pendingTasks.size} pending tasks, dispatched=$dispatched, reassigned=$reassigned")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to parse admin orders response: ${e.message}")

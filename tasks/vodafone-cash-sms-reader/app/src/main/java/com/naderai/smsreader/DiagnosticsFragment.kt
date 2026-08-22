@@ -142,12 +142,12 @@ class DiagnosticsFragment : Fragment() {
     private fun observeState() {
         val ctx = requireContext()
 
+        // ── Fix #7: اتصال وتسجيل ─────────────────────────────────────────────
         AppState.isConnected.observe(viewLifecycleOwner) { connected ->
-            tvApiStatus.text = if (connected) "✅ متاح" else "❌ غير متاح"
-            tvAuthStatus.text = if (connected) "✅ مصادق" else "❌ فشل"
-            tvHeartbeat.text = if (connected) "✅ يعمل" else "❌ متوقف"
-            tvRealtime.text = if (connected) "✅ متصل" else "⚠️ منفصل"
-            tvPolling.text = if (SmsMonitorService.isRunning) "✅ نشط" else "❌ متوقف"
+            tvApiStatus.text    = if (connected) "✅ متاح" else "❌ غير متاح"
+            tvAuthStatus.text   = if (connected) "✅ مصادق" else "❌ فشل"
+            tvHeartbeat.text    = if (connected) "✅ يعمل" else "❌ متوقف"
+            tvRealtime.text     = if (connected) "✅ متصل" else "⚠️ منفصل"
         }
 
         AppState.isRegistered.observe(viewLifecycleOwner) { reg ->
@@ -158,61 +158,94 @@ class DiagnosticsFragment : Fragment() {
             }
         }
 
+        // ── Fix #7: آخر sync ─────────────────────────────────────────────────
         AppState.lastSyncTime.observe(viewLifecycleOwner) { ts ->
             tvLastSync.text = if (ts != null) fmt.format(Date(ts)) else "—"
+            tvLastSyncResult.text = if (ts != null) "✅ ناجح" else "—"
         }
 
+        // ── Fix #7: قائمة الانتظار الحية = pendingTasks + service status ─────
         AppState.pendingTasks.observe(viewLifecycleOwner) { tasks ->
-            // Fix #11: queue count صحيح — يعكس الطلبات الفعلية في الـ service + LocalSmsQueue
-            val ctx = requireContext()
-            val localQueueSize = LocalSmsQueue.size(ctx)
+            val localQueueSize = LocalSmsQueue.size(requireContext())
             val pendingCount = tasks?.size ?: 0
             tvPendingQueue.text = buildString {
-                append("$pendingCount طلب")
+                append("$pendingCount مهمة")
                 if (localQueueSize > 0) append(" + $localQueueSize SMS محلي")
             }
             tvPolling.text = if (SmsMonitorService.isRunning) "✅ نشط ($pendingCount)" else "❌ متوقف"
         }
 
-        AppState.lastError.observe(viewLifecycleOwner) { err ->
-            tvLastError.text = err?.take(80) ?: "—"
-            tvLastSyncResult.text = if (err == null) "✅ ناجح" else "❌ فشل"
+        // ── Fix #7: عدد الطلبات الحي مع تفصيل الحالات ──────────────────────
+        AppState.orders.observe(viewLifecycleOwner) { orders ->
+            val total     = orders?.size ?: 0
+            val pending   = orders?.count { it.status in setOf(
+                OrderStatus.PENDING, OrderStatus.NEW, OrderStatus.SCANNING,
+                OrderStatus.SMS_FOUND, OrderStatus.REVIEWING,
+                OrderStatus.WAITING_CONFIRMATION) } ?: 0
+            val confirmed = orders?.count { it.status in setOf(
+                OrderStatus.COMPLETED, OrderStatus.CONFIRMED) } ?: 0
+            val failed    = orders?.count { it.status in setOf(
+                OrderStatus.FAILED, OrderStatus.NOT_FOUND,
+                OrderStatus.AMOUNT_MISMATCH, OrderStatus.EXPIRED) } ?: 0
+            // نعرض الملخص في حقل آخر طلب وصل
+            tvLastOrderRcv.text = "الكل=$total ⏳=$pending ✅=$confirmed ❌=$failed"
         }
 
-        // مراقبة DiagnosticsLog للحقول الديناميكية
+        // ── Fix #7: آخر خطأ ──────────────────────────────────────────────────
+        AppState.lastError.observe(viewLifecycleOwner) { err ->
+            if (err != null) {
+                tvLastError.text    = err.take(80)
+                tvLastSyncResult.text = "❌ فشل"
+            }
+        }
+
+        // ── Fix #7: DiagnosticsLog — تحديث حي لكل الحقول الديناميكية ────────
         OrderDiagnosticsLog.liveEntries.observe(viewLifecycleOwner) { entries ->
-            // آخر طلب وصل
-            entries.firstOrNull { it.type == OrderDiagnosticsLog.EventType.ORDER_RECEIVED }?.let {
-                tvLastOrderRcv.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}"
-            }
-            // آخر فحص
+            // آخر فحص بدأ
             entries.firstOrNull { it.type == OrderDiagnosticsLog.EventType.SCAN_STARTED }?.let {
-                tvLastScan.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}"
+                val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
+                tvLastScan.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}$dur"
             }
-            // آخر تطابق
-            entries.firstOrNull { it.type == OrderDiagnosticsLog.EventType.SMS_MATCH_FOUND }?.let {
-                tvLastSmsMatch.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}"
+            // آخر تطابق SMS (SMS_FOUND أو SMS_MATCH_FOUND)
+            entries.firstOrNull {
+                it.type in setOf(
+                    OrderDiagnosticsLog.EventType.SMS_FOUND,
+                    OrderDiagnosticsLog.EventType.SMS_MATCH_FOUND
+                )
+            }?.let {
+                val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
+                tvLastSmsMatch.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}$dur"
             }
-            // آخر تحقق
-            entries.firstOrNull { it.type in setOf(OrderDiagnosticsLog.EventType.VERIFY_RESULT, OrderDiagnosticsLog.EventType.SERVER_RESPONSE_OK) }?.let {
-                tvLastVerify.text = "${fmt.format(Date(it.ts))} ${it.type.emoji}"
+            // آخر تحقق (VERIFY_SUBMITTED أو SERVER_RESPONSE_OK)
+            entries.firstOrNull {
+                it.type in setOf(
+                    OrderDiagnosticsLog.EventType.VERIFY_SUBMITTED,
+                    OrderDiagnosticsLog.EventType.VERIFY_RESULT,
+                    OrderDiagnosticsLog.EventType.SERVER_RESPONSE_OK
+                )
+            }?.let {
+                val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
+                tvLastVerify.text = "${fmt.format(Date(it.ts))} ${it.type.emoji}$dur"
             }
             // آخر خطأ مع كود وtrace
-            val errEntry = OrderDiagnosticsLog.getLastError()
-            if (errEntry != null) {
-                tvLastError.text = "${errEntry.type.label}: ${errEntry.details?.take(60) ?: "—"}"
-                tvErrorCode.text = errEntry.serverCode?.toString() ?: errEntry.type.name
-                tvTraceId.text = errEntry.traceId ?: "—"
+            OrderDiagnosticsLog.getLastError()?.let { err ->
+                tvLastError.text  = "${err.type.label}: ${err.details?.take(60) ?: "—"}"
+                tvErrorCode.text  = err.serverCode?.toString() ?: err.type.name
+                tvTraceId.text    = err.traceId ?: "—"
+                tvLastSyncResult.text = "❌ ${err.type.label}"
             }
+            // طابور الإعادة (يتغير عند كل حدث)
+            tvRetryQueue.text = "${RetryQueue.size(requireContext())} عنصر"
             // Timeline آخر طلب
             refreshTimeline(entries)
         }
 
-        // Static info
+        // ── معلومات ثابتة (تُحدَّث مرة واحدة) ──────────────────────────────
         val deviceId = HeartbeatManager.getDeviceId(ctx)
-        tvDeviceId.text = deviceId.take(8) + "****" + deviceId.takeLast(4)
+        tvDeviceId.text   = deviceId.take(8) + "****" + deviceId.takeLast(4)
         tvRetryQueue.text = "${RetryQueue.size(ctx)} عنصر"
-        tvAppVersion.text = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) — Android ${Build.VERSION.RELEASE}"
+        tvAppVersion.text =
+            "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) — Android ${Build.VERSION.RELEASE}"
     }
 
     // ── Timeline ──────────────────────────────────────────────────────────────

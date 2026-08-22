@@ -248,6 +248,37 @@ class HeartbeatManager(
         }
     }
 
+    /** ── ACK الاستلام للسيرفر فور وصول الطلب للجهاز ──────────────────────────
+     *  يُرسل delivery_ack مرة واحدة عند أول استلام حقيقي للطلب.
+     *  السيرفر يستخدم هذا لتحديث حالة الطلب إلى DELIVERED.
+     */
+    fun sendDeliveryAck(requestId: String, taskId: String, receivedAt: String) {
+        val payload = mapOf(
+            "action"       to "delivery_ack",
+            "device_id"    to deviceId,
+            "request_id"   to requestId,
+            "task_id"      to taskId,
+            "received_at"  to receivedAt,
+            "app_version"  to BuildConfig.VERSION_NAME
+        )
+        WebhookSender.sendJsonWithBody(webhookUrl, secret, payload) { ok, msg, _ ->
+            if (ok) {
+                android.util.Log.i("HeartbeatManager",
+                    "DELIVERY_ACK_SENT | order=$requestId task=$taskId")
+                // سجّل في Diagnostics
+                OrderDiagnosticsLog.log(
+                    OrderDiagnosticsLog.EventType.ORDER_RECEIVED,
+                    null, requestId, taskId,
+                    traceId = OrderEventLogger.getOrBuildTrace(requestId),
+                    details = "delivery_ack → ok=true"
+                )
+            } else {
+                android.util.Log.w("HeartbeatManager",
+                    "DELIVERY_ACK_FAILED | order=$requestId msg=$msg")
+            }
+        }
+    }
+
     fun parseHeartbeatResponse(responseBody: String) {
         try {
             val json = org.json.JSONObject(responseBody)
@@ -341,6 +372,7 @@ class HeartbeatManager(
                     continue
                 }
 
+                val receivedNow = java.time.Instant.now().toString()
                 val task = TaskScanner.Task(
                     taskId = taskId,
                     requestId = requestId,
@@ -358,14 +390,21 @@ class HeartbeatManager(
                     requestCreatedAt = obj.optString("request_created_at").takeIf { it.isNotEmpty() },
                     paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
                     orderExpiresAt = obj.optString("order_expires_at").takeIf { it.isNotEmpty() },
-                    // Phase-1: lifecycle timestamps من السيرفر
+                    // Delivery lifecycle timestamps من السيرفر
                     queuedAt     = obj.optString("queued_at").takeIf { it.isNotEmpty() },
                     dispatchedAt = obj.optString("dispatched_at").takeIf { it.isNotEmpty() },
-                    receivedAt   = java.time.Instant.now().toString()  // نُسجّل الاستلام الآن
+                    receivedAt   = receivedNow  // وقت الاستلام الفعلي على الجهاز
                 )
                 tasks.add(task)
 
-                // تحديث أو إضافة الطلب في AppState — addOrUpdateOrder يحمي الحالات النهائية
+                // ── ACK الاستلام للسيرفر فوراً (مرة واحدة لكل طلب) ──────────────
+                // أرسل ACK عند أول وصول حقيقي: existingOrder غير موجود أو كان NEW/PENDING
+                if (existingOrder == null ||
+                    existingOrder.status in setOf(OrderStatus.NEW, OrderStatus.PENDING)) {
+                    sendDeliveryAck(requestId, taskId, receivedNow)
+                }
+
+                // ── تحديث/إضافة الطلب في AppState مع status=RECEIVED أولاً ─────
                 val orderNumber = if (obj.has("order_number") && !obj.isNull("order_number")) obj.getLong("order_number") else null
                 // استخدام request_created_at من السيرفر إذا توفر
                 val requestCreatedAtMs: Long = run {
