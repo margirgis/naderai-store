@@ -7,6 +7,8 @@ import android.content.Context
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -19,12 +21,23 @@ import java.util.*
 
 /**
  * Phase-3 Diagnostics — يعرض 15 حقل تشخيص + 6 أزرار + Order Timeline
- * لا تغيّر هذه الأزرار أي Business Data — تشخيص فقط.
+ * Fix #4: debounce observer لـ liveEntries لتجنّب تحديثات UI كثيرة جداً
  */
 class DiagnosticsFragment : Fragment() {
 
     private lateinit var root: LinearLayout
     private val fmt = SimpleDateFormat("HH:mm:ss dd/MM", Locale.getDefault())
+
+    // Fix #4: debounce handler لـ liveEntries
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var pendingEntriesUpdate: List<OrderDiagnosticsLog.LogEntry>? = null
+    private val DEBOUNCE_MS = 400L
+    private val entriesDebounceRunnable = Runnable {
+        val entries = pendingEntriesUpdate ?: return@Runnable
+        pendingEntriesUpdate = null
+        if (!isAdded) return@Runnable
+        applyEntriesUpdate(entries)
+    }
 
     // ── 15 حقل تشخيص ──────────────────────────────────────────────────────────
     private lateinit var tvApiStatus: TextView
@@ -64,6 +77,13 @@ class DiagnosticsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         buildUI()
         observeState()
+    }
+
+    override fun onDestroyView() {
+        // Fix #4: تنظيف الـ debounce handler لمنع memory leak
+        uiHandler.removeCallbacks(entriesDebounceRunnable)
+        pendingEntriesUpdate = null
+        super.onDestroyView()
     }
 
     private fun buildUI() {
@@ -199,45 +219,11 @@ class DiagnosticsFragment : Fragment() {
             }
         }
 
-        // ── Fix #7: DiagnosticsLog — تحديث حي لكل الحقول الديناميكية ────────
+        // ── Fix #4: DiagnosticsLog — debounce 400ms لتجنّب تحديث UI كل sync ────
         OrderDiagnosticsLog.liveEntries.observe(viewLifecycleOwner) { entries ->
-            // آخر فحص بدأ
-            entries.firstOrNull { it.type == OrderDiagnosticsLog.EventType.SCAN_STARTED }?.let {
-                val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
-                tvLastScan.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}$dur"
-            }
-            // آخر تطابق SMS (SMS_FOUND أو SMS_MATCH_FOUND)
-            entries.firstOrNull {
-                it.type in setOf(
-                    OrderDiagnosticsLog.EventType.SMS_FOUND,
-                    OrderDiagnosticsLog.EventType.SMS_MATCH_FOUND
-                )
-            }?.let {
-                val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
-                tvLastSmsMatch.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}$dur"
-            }
-            // آخر تحقق (VERIFY_SUBMITTED أو SERVER_RESPONSE_OK)
-            entries.firstOrNull {
-                it.type in setOf(
-                    OrderDiagnosticsLog.EventType.VERIFY_SUBMITTED,
-                    OrderDiagnosticsLog.EventType.VERIFY_RESULT,
-                    OrderDiagnosticsLog.EventType.SERVER_RESPONSE_OK
-                )
-            }?.let {
-                val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
-                tvLastVerify.text = "${fmt.format(Date(it.ts))} ${it.type.emoji}$dur"
-            }
-            // آخر خطأ مع كود وtrace
-            OrderDiagnosticsLog.getLastError()?.let { err ->
-                tvLastError.text  = "${err.type.label}: ${err.details?.take(60) ?: "—"}"
-                tvErrorCode.text  = err.serverCode?.toString() ?: err.type.name
-                tvTraceId.text    = err.traceId ?: "—"
-                tvLastSyncResult.text = "❌ ${err.type.label}"
-            }
-            // طابور الإعادة (يتغير عند كل حدث)
-            tvRetryQueue.text = "${RetryQueue.size(requireContext())} عنصر"
-            // Timeline آخر طلب
-            refreshTimeline(entries)
+            pendingEntriesUpdate = entries
+            uiHandler.removeCallbacks(entriesDebounceRunnable)
+            uiHandler.postDelayed(entriesDebounceRunnable, DEBOUNCE_MS)
         }
 
         // ── معلومات ثابتة (تُحدَّث مرة واحدة) ──────────────────────────────

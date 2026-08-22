@@ -6,14 +6,20 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.fragment.app.Fragment
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.RecyclerView
 import java.text.SimpleDateFormat
 import java.util.*
 
 class NotificationsFragment : Fragment() {
 
-    private lateinit var listView: ListView
+    private lateinit var recyclerView: RecyclerView
     private lateinit var emptyText: TextView
     private lateinit var markAllReadBtn: Button
+    // Fix #3: RecyclerView + ListAdapter + ViewHolder بدلاً من ListView + ArrayAdapter بدون ViewHolder
+    private val adapter = NotificationAdapter()
     private val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -22,7 +28,6 @@ class NotificationsFragment : Fragment() {
             setPadding(16, 16, 16, 16)
         }
 
-        // Header row
         val header = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -50,82 +55,91 @@ class NotificationsFragment : Fragment() {
         }
         root.addView(emptyText)
 
-        listView = ListView(requireContext())
-        root.addView(listView, LinearLayout.LayoutParams(
+        recyclerView = RecyclerView(requireContext()).apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            this.adapter = this@NotificationsFragment.adapter
+            setHasFixedSize(false)
+        }
+        root.addView(recyclerView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
-
         return root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         AppState.notifications.observe(viewLifecycleOwner) { list ->
-            if (list.isEmpty()) {
-                emptyText.visibility = View.VISIBLE
-                listView.adapter = null
-            } else {
-                emptyText.visibility = View.GONE
-                listView.adapter = NotificationAdapter(list)
-            }
+            emptyText.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+            adapter.submitList(list)
         }
     }
 
-    inner class NotificationAdapter(private val items: List<DeviceNotification>) :
-        ArrayAdapter<DeviceNotification>(requireContext(), 0, items) {
+    // Fix #3: ViewHolder pattern — لا View inflation في كل getView
+    inner class NotificationAdapter : ListAdapter<DeviceNotification, NotificationAdapter.VH>(DIFF) {
 
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val n = items[position]
-            val ctx = requireContext()
+        companion object {
+            val DIFF = object : DiffUtil.ItemCallback<DeviceNotification>() {
+                override fun areItemsTheSame(a: DeviceNotification, b: DeviceNotification) = a.id == b.id
+                override fun areContentsTheSame(a: DeviceNotification, b: DeviceNotification) = a == b
+            }
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val ctx = parent.context
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(12, 10, 12, 10)
-                setBackgroundColor(if (!n.isRead) 0x0F3B82F6 else 0x00000000)
+                layoutParams = RecyclerView.LayoutParams(
+                    RecyclerView.LayoutParams.MATCH_PARENT,
+                    RecyclerView.LayoutParams.WRAP_CONTENT
+                )
             }
             val titleRow = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
-            val icon = TextView(ctx).apply {
-                text = when (n.type) {
-                    NotificationType.CONNECTED -> "🟢"
-                    NotificationType.ERROR -> "🔴"
-                    NotificationType.INFO -> "ℹ️"
-                    NotificationType.ORDER_NEW -> "📋"
-                    NotificationType.ORDER_CONFIRMED -> "✅"
-                    NotificationType.ORDER_NOT_FOUND -> "❓"
-                    NotificationType.ORDER_MISMATCH -> "⚠️"
-                    NotificationType.TEST_SUCCESS -> "🧪"
-                    NotificationType.TEST_RECEIVED -> "📡"
-                    NotificationType.SERVER_DOWN -> "🔴"
-                }
-                textSize = 14f
-                setPadding(0, 0, 8, 0)
-            }
+            val icon  = TextView(ctx).apply { textSize = 14f; setPadding(0, 0, 8, 0) }
             val titleTv = TextView(ctx).apply {
-                text = n.title
                 textSize = 13f
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
-            val timeTv = TextView(ctx).apply {
-                text = fmt.format(Date(n.timestamp))
-                textSize = 11f
-                setTextColor(0xFF9CA3AF.toInt())
-            }
-            titleRow.addView(icon)
-            titleRow.addView(titleTv)
-            titleRow.addView(timeTv)
+            val timeTv = TextView(ctx).apply { textSize = 11f; setTextColor(0xFF9CA3AF.toInt()) }
+            titleRow.addView(icon); titleRow.addView(titleTv); titleRow.addView(timeTv)
             row.addView(titleRow)
-
             val msgTv = TextView(ctx).apply {
-                text = n.message
-                textSize = 12f
-                setTextColor(0xFF6B7280.toInt())
-                setPadding(22, 2, 0, 0)
+                textSize = 12f; setTextColor(0xFF6B7280.toInt()); setPadding(22, 2, 0, 0)
             }
             row.addView(msgTv)
-            return row
+            return VH(row, icon, titleTv, timeTv, msgTv)
         }
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            val n = getItem(position)
+            holder.icon.text = when (n.type) {
+                NotificationType.CONNECTED     -> "🟢"
+                NotificationType.ERROR         -> "🔴"
+                NotificationType.INFO          -> "ℹ️"
+                NotificationType.ORDER_NEW     -> "📋"
+                NotificationType.ORDER_CONFIRMED -> "✅"
+                NotificationType.ORDER_NOT_FOUND -> "❓"
+                NotificationType.ORDER_MISMATCH -> "⚠️"
+                NotificationType.TEST_SUCCESS  -> "🧪"
+                NotificationType.TEST_RECEIVED -> "📡"
+                NotificationType.SERVER_DOWN   -> "🔴"
+            }
+            holder.titleTv.text = n.title
+            holder.timeTv.text = fmt.format(Date(n.timestamp))
+            holder.msgTv.text = n.message
+            holder.row.setBackgroundColor(if (!n.isRead) 0x0F3B82F6 else 0x00000000)
+        }
+
+        inner class VH(
+            val row: LinearLayout,
+            val icon: TextView,
+            val titleTv: TextView,
+            val timeTv: TextView,
+            val msgTv: TextView
+        ) : RecyclerView.ViewHolder(row)
     }
 }

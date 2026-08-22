@@ -44,16 +44,15 @@ class MainActivity : AppCompatActivity() {
 
         adapter = MainPagerAdapter(this)
         binding.viewPager.adapter = adapter
-        binding.viewPager.offscreenPageLimit = 3
+        // Fix #2: offscreenPageLimit=1 بدلاً من 3 — يمنع تحميل 14 fragment في وقت واحد
+        binding.viewPager.offscreenPageLimit = 1
 
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = adapter.getTitle(position)
         }.attach()
 
-        loadOrdersFromStorage()
-        AppState.orders.observe(this, Observer { orders ->
-            OrderStorage.saveOrders(this, orders)
-        })
+        // Fix #5: loadOrders مُزالة من هنا — NaderAiApplication.onCreate() تتولى ذلك على IO thread
+        // Fix #5: saveOrders observer مُزال — NaderAiApplication.ordersObserver (مع debounce) يتولى ذلك
         // ── مراقبة التحديث الإجباري ───────────────────────────────────────────
         AppState.forceUpdateRequired.observe(this, Observer { required ->
             if (required == true) showForceUpdateDialog()
@@ -62,18 +61,6 @@ class MainActivity : AppCompatActivity() {
         startOrderSyncManager()
         NetworkMonitor.start(this)
         SyncTriggers.onAppStart(this)
-    }
-
-    private fun loadOrdersFromStorage() {
-        try {
-            val cached = OrderStorage.loadOrders(this)
-            if (cached.isNotEmpty()) {
-                AppState.setOrders(cached)
-                android.util.Log.d("MainActivity", "Loaded ${cached.size} orders from local storage")
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to load local orders: ${e.message}")
-        }
     }
 
     private fun startOrderSyncManager() {

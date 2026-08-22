@@ -169,9 +169,21 @@ class OrderMonitorFragment : Fragment() {
     }
 
     private fun observeLiveData() {
-        OrderDiagnosticsLog.liveEntries.observe(viewLifecycleOwner) { entries ->
+        // Fix #4: debounce 400ms لـ liveEntries — تمنع تحديث UI عند كل sync (كل 10s)
+        val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        var pendingEntries: List<OrderDiagnosticsLog.LogEntry>? = null
+        val debounceRunnable = Runnable {
+            val entries = pendingEntries ?: return@Runnable
+            pendingEntries = null
+            if (!isAdded) return@Runnable
+            // Fix #4: cap at 100 entries للـ UI فقط — لا يُحذف من الـ log الأصلي
             updateSummary(entries)
             applyFilter(entries)
+        }
+        OrderDiagnosticsLog.liveEntries.observe(viewLifecycleOwner) { entries ->
+            pendingEntries = entries
+            uiHandler.removeCallbacks(debounceRunnable)
+            uiHandler.postDelayed(debounceRunnable, 400L)
         }
     }
 
