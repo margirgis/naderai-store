@@ -16,6 +16,11 @@ class OrderSyncManager(
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val deviceId: String get() = HeartbeatManager.getDeviceId(context)
+
+    // Fix #4 — حالة الـ retry على مستوى الـ instance (وليس companion)
+    private var tasks0RetryCount    = 0
+    private var tasks0LastRetriedAt = 0L
+
     private val syncRunnable = object : Runnable {
         override fun run() {
             sync()
@@ -24,16 +29,11 @@ class OrderSyncManager(
     }
 
     companion object {
-        private const val SYNC_INTERVAL_MS = 10_000L
-        private const val TAG = "OrderSyncManager"
-
-        // Fix #4 — منع الحلقة اللانهائية: max 3 محاولات، cooldown 60 ثانية
-        private const val MAX_TASKS0_RETRIES  = 3
-        private const val TASKS0_COOLDOWN_MS  = 60_000L   // لا تُعيد sync قبل دقيقة
-        private const val TASKS0_RETRY_DELAY  = 8_000L    // تأخير 8s بدلاً من 5s
-
-        private var tasks0RetryCount      = 0
-        private var tasks0LastRetriedAt   = 0L
+        private const val SYNC_INTERVAL_MS   = 10_000L
+        private const val TAG                = "OrderSyncManager"
+        private const val MAX_TASKS0_RETRIES = 3
+        private const val TASKS0_COOLDOWN_MS = 60_000L
+        private const val TASKS0_RETRY_DELAY = 8_000L
     }
 
         /**
