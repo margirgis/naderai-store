@@ -27,6 +27,15 @@ class OrderSyncManager(
         private const val SYNC_INTERVAL_MS = 10_000L
         private const val TAG = "OrderSyncManager"
 
+        // Fix #4 — منع الحلقة اللانهائية: max 3 محاولات، cooldown 60 ثانية
+        private const val MAX_TASKS0_RETRIES  = 3
+        private const val TASKS0_COOLDOWN_MS  = 60_000L   // لا تُعيد sync قبل دقيقة
+        private const val TASKS0_RETRY_DELAY  = 8_000L    // تأخير 8s بدلاً من 5s
+
+        private var tasks0RetryCount      = 0
+        private var tasks0LastRetriedAt   = 0L
+    }
+
         /**
          * يبني كائن OrderItem من الاستجابة الكاملة للسيرفر.
          */
@@ -283,48 +292,61 @@ class OrderSyncManager(
             if (dispatched > 0) OrderEventLogger.orderDispatched(null, null, deviceId)
             if (reassigned > 0) OrderEventLogger.staleDeviceReassigned(reassigned, deviceId)
             OrderEventLogger.syncResponse(orders.size, pendingTasks.size, deviceId)
-            // Fix #4: تحذير orders=N tasks=0 — إذا وصلت طلبات بدون مهام فحص
-            if (orders.isNotEmpty() && pendingTasks.isEmpty()) {
-                val unfinished = AppState.getOrders().filter {
-                    it.status in setOf(
-                        OrderStatus.PENDING, OrderStatus.NEW,
-                        OrderStatus.SCANNING, OrderStatus.NOT_FOUND
-                    )
+            // ──────────────────────────────────────────────────────────────────
+            // Fix #4 (v1.1.63): orders=N tasks=0 — مع حماية من الحلقة اللانهائية
+            //
+            // الخوارزمية الآمنة:
+            //   1. فلتر صارم: فقط طلبات PENDING/NEW وصلت من السيرفر في هذه الدورة
+            //   2. maxRetries = 3 → بعدها نتوقف ونسجل فقط
+            //   3. cooldown = 60s → لو retried مؤخراً لا نُعيد
+            //   4. إعادة ضبط العداد عند وصول tasks > 0
+            // ──────────────────────────────────────────────────────────────────
+            if (pendingTasks.isNotEmpty()) {
+                // طلبات حقيقية وصلت → أعد ضبط العداد
+                tasks0RetryCount    = 0
+                tasks0LastRetriedAt = 0L
+            } else if (orders.isNotEmpty()) {
+                // tasks=0 — تحقق هل هناك طلبات تحتاج فحص فعلاً؟
+                // فقط الطلبات الواردة من السيرفر في هذه الدورة (requestIds الجديدة)
+                val incomingIds    = orders.map { it.requestId }.toSet()
+                val needsScan = AppState.getOrders().filter { local ->
+                    local.requestId in incomingIds &&
+                    local.status in setOf(OrderStatus.PENDING, OrderStatus.NEW)
                 }
-                if (unfinished.isNotEmpty()) {
-                    android.util.Log.w(TAG,
-                        "orders=${orders.size} tasks=0 — ${unfinished.size} orders still unfinished! Requesting re-sync in 5s")
-                    OrderDiagnosticsLog.log(
-                        OrderDiagnosticsLog.EventType.GENERIC_ERROR,
-                        details = "orders=${orders.size} pending_tasks=0 — ${unfinished.size} طلبات غير مكتملة بلا مهام!"
-                    )
-                    // إعادة المزامنة بعد 5 ثواني لجلب pending_tasks الفائتة
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        sync()
-                    }, 5_000L)
+                if (needsScan.isNotEmpty()) {
+                    val now = System.currentTimeMillis()
+                    val sinceLastRetry = now - tasks0LastRetriedAt
+                    when {
+                        // cooldown لم ينتهِ بعد → لا تُعيد
+                        sinceLastRetry < TASKS0_COOLDOWN_MS && tasks0RetryCount > 0 -> {
+                            android.util.Log.d(TAG,
+                                "orders=N tasks=0 cooldown active (${sinceLastRetry/1000}s/${TASKS0_COOLDOWN_MS/1000}s) — skip retry")
+                        }
+                        // وصلنا للحد الأقصى → سجّل وتوقف
+                        tasks0RetryCount >= MAX_TASKS0_RETRIES -> {
+                            android.util.Log.w(TAG,
+                                "orders=N tasks=0 — maxRetries($MAX_TASKS0_RETRIES) reached, giving up")
+                            OrderDiagnosticsLog.log(
+                                OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                                details = "orders=${orders.size} tasks=0 maxRetries وصل الحد — الطلبات تحتاج تدخل يدوي"
+                            )
+                        }
+                        // محاولة مسموحة
+                        else -> {
+                            tasks0RetryCount++
+                            tasks0LastRetriedAt = now
+                            android.util.Log.w(TAG,
+                                "orders=${orders.size} tasks=0 — ${needsScan.size} need scan, retry $tasks0RetryCount/$MAX_TASKS0_RETRIES in ${TASKS0_RETRY_DELAY/1000}s")
+                            OrderDiagnosticsLog.log(
+                                OrderDiagnosticsLog.EventType.GENERIC_ERROR,
+                                details = "orders=${orders.size} tasks=0 — retry $tasks0RetryCount/$MAX_TASKS0_RETRIES"
+                            )
+                            handler.postDelayed({ sync() }, TASKS0_RETRY_DELAY)
+                        }
+                    }
                 }
             }
-            // Fix #4: تحذير orders=N tasks=0 — إذا وصلت طلبات بدون مهام فحص
-            if (orders.isNotEmpty() && pendingTasks.isEmpty()) {
-                val unfinished = AppState.getOrders().filter {
-                    it.status in setOf(
-                        OrderStatus.PENDING, OrderStatus.NEW,
-                        OrderStatus.SCANNING, OrderStatus.NOT_FOUND
-                    )
-                }
-                if (unfinished.isNotEmpty()) {
-                    android.util.Log.w(TAG,
-                        "orders=${orders.size} tasks=0 — ${unfinished.size} orders still unfinished! Requesting re-sync in 5s")
-                    OrderDiagnosticsLog.log(
-                        OrderDiagnosticsLog.EventType.GENERIC_ERROR,
-                        details = "orders=${orders.size} pending_tasks=0 — ${unfinished.size} طلبات غير مكتملة بلا مهام!"
-                    )
-                    // إعادة المزامنة بعد 5 ثواني لجلب pending_tasks الفائتة
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        sync()
-                    }, 5_000L)
-                }
-            }
+            // ──────────────────────────────────────────────────────────────────
             android.util.Log.d(TAG, "Synced ${orders.size} orders, ${pendingTasks.size} pending tasks, dispatched=$dispatched, reassigned=$reassigned")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to parse admin orders response: ${e.message}")
