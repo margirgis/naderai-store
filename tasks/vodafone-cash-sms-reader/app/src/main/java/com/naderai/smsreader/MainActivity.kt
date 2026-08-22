@@ -13,7 +13,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: MainPagerAdapter
-    private var orderSyncManager: OrderSyncManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Catch-all to prevent crash loops and let the user see diagnostics
