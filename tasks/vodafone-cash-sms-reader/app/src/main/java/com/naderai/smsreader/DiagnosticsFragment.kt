@@ -234,6 +234,46 @@ class DiagnosticsFragment : Fragment() {
             "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) — Android ${Build.VERSION.RELEASE}"
     }
 
+    // ── Fix #4: تُستدعى من debounce runnable فقط — لا تُستدعى مباشرة من observer ─
+    private fun applyEntriesUpdate(entries: List<OrderDiagnosticsLog.LogEntry>) {
+        if (!isAdded) return
+        // آخر فحص بدأ
+        entries.firstOrNull { it.type == OrderDiagnosticsLog.EventType.SCAN_STARTED }?.let {
+            val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
+            tvLastScan.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}$dur"
+        }
+        // آخر تطابق SMS
+        entries.firstOrNull {
+            it.type in setOf(
+                OrderDiagnosticsLog.EventType.SMS_FOUND,
+                OrderDiagnosticsLog.EventType.SMS_MATCH_FOUND
+            )
+        }?.let {
+            val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
+            tvLastSmsMatch.text = "${fmt.format(Date(it.ts))} #${it.orderNumber ?: "?"}$dur"
+        }
+        // آخر تحقق
+        entries.firstOrNull {
+            it.type in setOf(
+                OrderDiagnosticsLog.EventType.VERIFY_SUBMITTED,
+                OrderDiagnosticsLog.EventType.VERIFY_RESULT,
+                OrderDiagnosticsLog.EventType.SERVER_RESPONSE_OK
+            )
+        }?.let {
+            val dur = it.durationMs?.let { d -> " (${d}ms)" } ?: ""
+            tvLastVerify.text = "${fmt.format(Date(it.ts))} ${it.type.emoji}$dur"
+        }
+        // آخر خطأ مع كود وtrace
+        OrderDiagnosticsLog.getLastError()?.let { err ->
+            tvLastError.text      = "${err.type.label}: ${err.details?.take(60) ?: "—"}"
+            tvErrorCode.text      = err.serverCode?.toString() ?: err.type.name
+            tvTraceId.text        = err.traceId ?: "—"
+            tvLastSyncResult.text = "❌ ${err.type.label}"
+        }
+        tvRetryQueue.text = "${RetryQueue.size(requireContext())} عنصر"
+        refreshTimeline(entries)
+    }
+
     // ── Timeline ──────────────────────────────────────────────────────────────
 
     private fun refreshTimeline(entries: List<OrderDiagnosticsLog.LogEntry>) {
