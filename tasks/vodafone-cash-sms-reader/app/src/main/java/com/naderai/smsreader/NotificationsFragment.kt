@@ -75,7 +75,8 @@ class NotificationsFragment : Fragment() {
     }
 
     // Fix #3: ViewHolder pattern — لا View inflation في كل getView
-    inner class NotificationAdapter : ListAdapter<DeviceNotification, NotificationAdapter.VH>(DIFF) {
+    // NotificationAdapter ليست inner class لأن companion object لا يعمل داخل inner class في Kotlin
+    class NotificationAdapter : ListAdapter<DeviceNotification, NotificationAdapter.VH>(DIFF) {
 
         companion object {
             val DIFF = object : DiffUtil.ItemCallback<DeviceNotification>() {
@@ -98,7 +99,7 @@ class NotificationsFragment : Fragment() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
-            val icon  = TextView(ctx).apply { textSize = 14f; setPadding(0, 0, 8, 0) }
+            val icon    = TextView(ctx).apply { textSize = 14f; setPadding(0, 0, 8, 0) }
             val titleTv = TextView(ctx).apply {
                 textSize = 13f
                 setTypeface(null, android.graphics.Typeface.BOLD)
@@ -117,24 +118,24 @@ class NotificationsFragment : Fragment() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             val n = getItem(position)
             holder.icon.text = when (n.type) {
-                NotificationType.CONNECTED     -> "🟢"
-                NotificationType.ERROR         -> "🔴"
-                NotificationType.INFO          -> "ℹ️"
-                NotificationType.ORDER_NEW     -> "📋"
+                NotificationType.CONNECTED       -> "🟢"
+                NotificationType.ERROR           -> "🔴"
+                NotificationType.INFO            -> "ℹ️"
+                NotificationType.ORDER_NEW       -> "📋"
                 NotificationType.ORDER_CONFIRMED -> "✅"
                 NotificationType.ORDER_NOT_FOUND -> "❓"
-                NotificationType.ORDER_MISMATCH -> "⚠️"
-                NotificationType.TEST_SUCCESS  -> "🧪"
-                NotificationType.TEST_RECEIVED -> "📡"
-                NotificationType.SERVER_DOWN   -> "🔴"
+                NotificationType.ORDER_MISMATCH  -> "⚠️"
+                NotificationType.TEST_SUCCESS    -> "🧪"
+                NotificationType.TEST_RECEIVED   -> "📡"
+                NotificationType.SERVER_DOWN     -> "🔴"
             }
             holder.titleTv.text = n.title
-            holder.timeTv.text = fmt.format(Date(n.timestamp))
-            holder.msgTv.text = n.message
+            holder.timeTv.text  = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(java.util.Date(n.timestamp))
+            holder.msgTv.text   = n.message
             holder.row.setBackgroundColor(if (!n.isRead) 0x0F3B82F6 else 0x00000000)
         }
 
-        inner class VH(
+        class VH(
             val row: LinearLayout,
             val icon: TextView,
             val titleTv: TextView,
