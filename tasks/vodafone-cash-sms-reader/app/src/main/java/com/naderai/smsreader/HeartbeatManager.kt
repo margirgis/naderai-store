@@ -104,9 +104,12 @@ class HeartbeatManager(
     fun forceSync() {
         handler.removeCallbacks(heartbeatRunnable)
         consecutiveFailures = 0
+        // Bug #3 Fix (Heartbeat path): أرسل heartbeat فوراً (delay=0) بدلاً من 10s
+        // كان يُرسل registerDevice() ثم ينتظر HEARTBEAT_INTERVAL_ACTIVE_MS=10s قبل أول heartbeat
+        // → الطلبات الجديدة التي تصل في الـ 10s الأولى لا تُستلم
         registerDevice()
-        // بعد التسجيل سيرسل Heartbeat أول مباشرةً
-        handler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_ACTIVE_MS)
+        // heartbeat فوري بدون delay لاستلام pending_tasks في الحال
+        handler.post(heartbeatRunnable)
     }
 
     /** Explicit device_register call — separate from heartbeat */

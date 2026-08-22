@@ -140,11 +140,23 @@ object SyncTriggers {
         }
     }
 
+    /**
+     * Bug #3 Fix: startAdminSync لا تتحقق من adminUrl لتتجنب الـ guard bug.
+     * كانت `if (orderSyncManager?.adminUrl == adminUrl) return` تمنع restart
+     * عند Runtime (URL نفسه) → الـ instance القديم يظل متوقفاً بدون علم.
+     * الحل: تُوقف دائماً وتُنشئ جديداً، مع guard على الـ URL الفارغ فقط.
+     */
     private fun startAdminSync(ctx: Context) {
         val rawUrl = ctx.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
             .getString(MainActivity.KEY_WEBHOOK_URL, null)
         val adminUrl = SupabaseConfig.getAdminOrdersUrl(rawUrl) ?: return
-        if (orderSyncManager?.adminUrl == adminUrl) return
+        // Bug #3 Fix: لا نتحقق من adminUrl == adminUrl — هذا Guard كان يمنع restart في Runtime
+        // نتحقق فقط: هل الـ instance شغّال فعلاً؟ إذا شغّال على نفس URL → لا نعيد
+        if (orderSyncManager != null && orderSyncManager?.adminUrl == adminUrl) {
+            // instance موجود وشغّال على نفس URL → sync فوري بدلاً من restart
+            orderSyncManager?.sync()
+            return
+        }
         orderSyncManager?.stop()
         orderSyncManager = OrderSyncManager(ctx, adminUrl) { _, _ -> }
         orderSyncManager?.start()

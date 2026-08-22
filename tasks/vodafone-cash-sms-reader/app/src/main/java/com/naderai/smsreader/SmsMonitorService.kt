@@ -364,30 +364,16 @@ class SmsMonitorService : Service() {
             )
             heartbeatManager?.start()
 
-            // ── أيضاً: لو admin مسجل دخول شغّل OrderSyncManager لمزامنة الحالات ──
-            if (adminLoggedIn) {
-                val adminUrl = SupabaseConfig.getAdminUrl(webhookUrl) ?: ""
-                if (adminUrl.isNotEmpty()) {
-                    orderSyncManager?.stop()
-                    orderSyncManager = OrderSyncManager(this, adminUrl) { success, msg ->
-                        if (success) android.util.Log.d("SmsMonitorService", "Admin sync OK: $msg")
-                    }
-                    orderSyncManager?.start()
-                }
-            }
+        // Bug #1 Fix: لا نُنشئ instance ثانٍ هنا — SyncTriggers هو المدير الوحيد لـ OrderSyncManager
+        // كان يُنشئ instance منفصل → 3 instances في نفس الوقت → GENERIC_ERROR chain
+        if (adminLoggedIn) {
+            SyncTriggers.onLogin(this)
+        }
         } else if (adminLoggedIn) {
             // ── Admin-only mode: لا webhook — نستخدم Admin API مباشرة ──
             updateNotification("متصل كأدمن ✓")
-            val adminUrl = SupabaseConfig.getAdminUrl("") ?: ""
-            if (adminUrl.isNotEmpty()) {
-                orderSyncManager?.stop()
-                orderSyncManager = OrderSyncManager(this, adminUrl) { success, msg ->
-                    if (success) updateNotification("مزامنة أدمن ✓")
-                }
-                orderSyncManager?.start()
-            } else {
-                updateNotification("أدمن — لا يوجد webhook URL")
-            }
+            // Bug #1 Fix: SyncTriggers يُدير OrderSyncManager — لا نُنشئ instance هنا
+            SyncTriggers.onLogin(this)
         } else {
             updateNotification("في انتظار الإعدادات...")
         }

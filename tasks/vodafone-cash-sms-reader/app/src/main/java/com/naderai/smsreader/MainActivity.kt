@@ -77,17 +77,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startOrderSyncManager() {
-        val rawUrl = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_WEBHOOK_URL, null)
-        val adminUrl = SupabaseConfig.getAdminOrdersUrl(rawUrl)
-        if (adminUrl != null) {
-            orderSyncManager?.stop()
-            orderSyncManager = OrderSyncManager(this, adminUrl) { success, msg ->
-                if (!success) {
-                    android.util.Log.d("OrderSyncManager", "Sync result: $msg")
-                }
-            }
-            orderSyncManager?.start()
-        }
+        // Bug #1 Fix: لا تُنشئ OrderSyncManager هنا — SmsMonitorService + SyncTriggers يُديرانه
+        // إنشاء 3 instances منفصلة كان يُسبب 3×sync كل 10s → GENERIC_ERROR chain
+        // SyncTriggers.onAppStart() و SmsMonitorService.onStartCommand() يتولى ذلك
     }
 
     override fun onResume() {

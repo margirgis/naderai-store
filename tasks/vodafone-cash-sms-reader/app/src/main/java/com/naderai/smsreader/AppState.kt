@@ -75,19 +75,24 @@ object AppState {
                 val serverStatus = order.status
                 val localStatus  = existing.status
                 val mergedStatus = when {
-                    // 1. السيرفر يعيد قرار نهائي → دائماً يفوز (يحل مشكلة DUPLICATE يُتجاهل)
+                    // 1. السيرفر يعيد قرار نهائي → دائماً يفوز
                     serverStatus.isTerminal()                                  -> serverStatus
                     // 2. الجهاز وصل لحالة نهائية ولم يرد السيرفر بعكسها → تُحافظ عليها
                     localStatus.isTerminal()                                   -> localStatus
                     // 3. إذا السيرفر يعيد PENDING لطلب EXPIRED محلياً → السيرفر يفوز (إعادة فتح الطلب)
                     localStatus == OrderStatus.EXPIRED && serverStatus == OrderStatus.PENDING -> OrderStatus.PENDING
-                    // 4. الجهاز في فحص نشط → لا نُقاطعه بـ PENDING من السيرفر
-                    serverStatus == OrderStatus.PENDING && localStatus == OrderStatus.SCANNING -> localStatus
-                    // 5. الجهاز MANUAL_REVIEW (مؤقتة) والسيرفر يعيد حالة أوضح → السيرفر يفوز
+                    // 4. الجهاز في فحص نشط أو انتظار تأكيد → لا نُقاطعه بـ PENDING من السيرفر
+                    serverStatus == OrderStatus.PENDING && localStatus in setOf(
+                        OrderStatus.SCANNING, OrderStatus.SMS_FOUND,
+                        OrderStatus.REVIEWING, OrderStatus.WAITING_CONFIRMATION
+                    ) -> localStatus
+                    // 5. Bug #6 Fix: WAITING_CONFIRMATION محلياً → لا يُكتب فوقها إلا بحالة أوضح من السيرفر
+                    localStatus == OrderStatus.WAITING_CONFIRMATION && serverStatus == OrderStatus.PENDING -> localStatus
+                    // 6. الجهاز MANUAL_REVIEW (مؤقتة) والسيرفر يعيد حالة أوضح → السيرفر يفوز
                     localStatus == OrderStatus.MANUAL_REVIEW && serverStatus != OrderStatus.PENDING -> serverStatus
-                    // 6. السيرفر يعيد PENDING → نبقي الحالة المحلية الأكثر تقدماً
+                    // 7. السيرفر يعيد PENDING → نبقي الحالة المحلية الأكثر تقدماً
                     serverStatus == OrderStatus.PENDING                        -> localStatus
-                    // 7. باقي الحالات → ما جاء من السيرفر أحدث
+                    // 8. باقي الحالات → ما جاء من السيرفر أحدث
                     else                                                       -> serverStatus
                 }
                 existing.withSnapshotPreserved(order).copy(

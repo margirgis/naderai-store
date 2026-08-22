@@ -140,7 +140,11 @@ class OrderSyncManager(
                 paymentOrderId = obj.optString("payment_order_id").takeIf { it.isNotEmpty() },
                 orderExpiresAt = orderExpiresAt,
                 scanStatus = scanStatus,
-                resultStatus = resultStatus
+                resultStatus = resultStatus,
+                // Bug #4 Fix: إضافة sender_phone_requested و sender_name_requested
+                // كانت مفقودة من parseOrder → OrderItem لا يحتوي عليها → TaskScanner لا يجد رقم المُرسِل
+                senderPhoneRequested = obj.optString("sender_phone_requested").takeIf { it.isNotEmpty() && it != "null" },
+                senderNameRequested  = obj.optString("sender_name_requested").takeIf { it.isNotEmpty() && it != "null" }
             )
         }
 
@@ -292,43 +296,35 @@ class OrderSyncManager(
             if (dispatched > 0) OrderEventLogger.orderDispatched(null, null, deviceId)
             if (reassigned > 0) OrderEventLogger.staleDeviceReassigned(reassigned, deviceId)
             OrderEventLogger.syncResponse(orders.size, pendingTasks.size, deviceId)
-            // Fix #4 v1.1.65: orders=N tasks=0 — حماية من الحلقة اللانهائية
-            // maxRetries=3, cooldown=60s, فلتر PENDING/NEW فقط من الـ incoming orders
-            if (pendingTasks.isNotEmpty()) {
-                tasks0RetryCount    = 0
-                tasks0LastRetriedAt = 0L
-            } else if (orders.isNotEmpty()) {
+
+            // Bug #2 Fix: tasks=0 retry — لا معنى له هنا لأن:
+            // 1. admin-orders يُرسل pending_tasks للطلبات غير المؤكدة فقط
+            // 2. إذا السيرفر أرسل orders بدون tasks → الطلبات مكتملة أو الـ server لم يُخصص task بعد
+            // 3. الـ retry كان يُطلق sync() مرات بلا حد → GENERIC_ERROR chain
+            // الحل الصحيح: إذا orders > 0 && tasks == 0 → سجّل diagnostic فقط (بدون retry)
+            if (pendingTasks.isEmpty() && orders.isNotEmpty()) {
                 val incomingIds = orders.map { it.requestId }.toSet()
                 val needsScan = AppState.getOrders().filter { local ->
                     local.requestId in incomingIds &&
                     local.status in setOf(OrderStatus.PENDING, OrderStatus.NEW)
                 }
                 if (needsScan.isNotEmpty()) {
-                    val now = System.currentTimeMillis()
-                    val sinceLastRetry = now - tasks0LastRetriedAt
-                    when {
-                        sinceLastRetry < TASKS0_COOLDOWN_MS && tasks0RetryCount > 0 ->
-                            android.util.Log.d(TAG, "tasks=0 cooldown (${sinceLastRetry/1000}s) — skip")
-                        tasks0RetryCount >= MAX_TASKS0_RETRIES -> {
-                            android.util.Log.w(TAG, "tasks=0 maxRetries reached, giving up")
-                            OrderDiagnosticsLog.log(
-                                OrderDiagnosticsLog.EventType.GENERIC_ERROR,
-                                details = "orders=${orders.size} tasks=0 — maxRetries وصل الحد"
-                            )
-                        }
-                        else -> {
-                            tasks0RetryCount++
-                            tasks0LastRetriedAt = now
-                            android.util.Log.w(TAG,
-                                "tasks=0 retry $tasks0RetryCount/$MAX_TASKS0_RETRIES in ${TASKS0_RETRY_DELAY/1000}s")
-                            OrderDiagnosticsLog.log(
-                                OrderDiagnosticsLog.EventType.GENERIC_ERROR,
-                                details = "orders=${orders.size} tasks=0 — retry $tasks0RetryCount/$MAX_TASKS0_RETRIES"
-                            )
-                            handler.postDelayed({ sync() }, TASKS0_RETRY_DELAY)
-                        }
-                    }
+                    // Bug #5 Fix: structured diagnostic بدلاً من GENERIC_ERROR
+                    OrderDiagnosticsLog.log(
+                        OrderDiagnosticsLog.EventType.SYNC_TASKS,
+                        details = "ADMIN_ORDERS_SYNC | orders=${orders.size} tasks=0 " +
+                            "| needsScan=${needsScan.size} | stage=ORDER_RECONCILIATION " +
+                            "| السيرفر لم يُخصص tasks لهذه الطلبات — لا retry (السيرفر مسؤول عن التخصيص)"
+                    )
+                    android.util.Log.i(TAG,
+                        "ADMIN_ORDERS: orders=${orders.size} tasks=0 — ${needsScan.size} orders await server task assignment (no client retry)")
                 }
+                // أعد ضبط العدادات القديمة
+                tasks0RetryCount    = 0
+                tasks0LastRetriedAt = 0L
+            } else if (pendingTasks.isNotEmpty()) {
+                tasks0RetryCount    = 0
+                tasks0LastRetriedAt = 0L
             }
             android.util.Log.d(TAG, "Synced ${orders.size} orders, ${pendingTasks.size} pending tasks, dispatched=$dispatched, reassigned=$reassigned")
         } catch (e: Exception) {
